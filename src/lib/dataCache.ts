@@ -48,3 +48,21 @@ export function invalidateCache(prefix?: string) {
     }
   }
 }
+
+export function invalidateStudentEnrollmentCache(studentId?: string) {
+  if (studentId) {
+    invalidateCache(`student-enrolled-courses:${studentId}`);
+    return;
+  }
+
+  invalidateCache('student-enrolled-courses:');
+}
+
+export function invalidateInstructorCourseCache(instructorId?: string) {
+  if (instructorId) {
+    invalidateCache(`instructor-courses:${instructorId}`);
+  }
+
+  invalidateCache('instructor-courses:');
+  invalidateCache('published-courses');
+}

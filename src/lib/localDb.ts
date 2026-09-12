@@ -8,6 +8,7 @@ import type {
   User,
 } from '@/types';
 import { deleteEntityCleanupApi, type DeleteCleanupResult } from '@/services/api';
+import { invalidateInstructorCourseCache, invalidateStudentEnrollmentCache } from '@/lib/dataCache';
 
 export const localDatabaseConfig = {
   provider: 'sqlite',
@@ -689,7 +690,15 @@ export function writeLocalCourses(courses: LocalCourseRecord[]) {
     .map(normalizeStoredCourse)
     .filter(Boolean)
     .filter((course) => isPersistableCourse(course)) as LocalCourseRecord[];
+
   writeLocalStorageJSON(getLocalCoursesKey(), sanitizedCourses);
+  invalidateInstructorCourseCache();
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('learnflow-course-changed', {
+      detail: { timestamp: Date.now() },
+    }));
+  }
 }
 
 function getLessonMediaUrls(lesson: Partial<CourseLessonRecord> | null | undefined): string[] {
@@ -1063,29 +1072,39 @@ export function readLocalEnrollments(): LocalEnrollmentRecord[] {
 }
 
 export function writeLocalEnrollments(enrollments: LocalEnrollmentRecord[]) {
-  writeLocalStorageJSON(
-    getLocalEnrollmentsKey(),
-    enrollments.map((entry) => {
-      const progressPercentage = Number.isFinite(entry.progressPercentage)
-        ? Number(entry.progressPercentage)
-        : Number.isFinite(entry.progress)
-          ? Number(entry.progress)
-          : 0;
-      const progress = Number.isFinite(entry.progress)
+  const normalizedEnrollments = enrollments.map((entry) => {
+    const progressPercentage = Number.isFinite(entry.progressPercentage)
+      ? Number(entry.progressPercentage)
+      : Number.isFinite(entry.progress)
         ? Number(entry.progress)
-        : progressPercentage;
+        : 0;
+    const progress = Number.isFinite(entry.progress)
+      ? Number(entry.progress)
+      : progressPercentage;
 
-      return {
-        ...entry,
-        userId: entry.userId || entry.studentId,
-        studentId: entry.studentId || entry.userId,
-        completedLessonIds: Array.from(new Set((entry.completedLessonIds ?? []).filter(Boolean))),
-        progress,
-        progressPercentage,
-        status: progress >= 100 ? 'completed' : 'active',
-      };
-    }),
-  );
+    return {
+      ...entry,
+      userId: entry.userId || entry.studentId,
+      studentId: entry.studentId || entry.userId,
+      completedLessonIds: Array.from(new Set((entry.completedLessonIds ?? []).filter(Boolean))),
+      progress,
+      progressPercentage,
+      status: progress >= 100 ? 'completed' : 'active',
+    };
+  });
+
+  writeLocalStorageJSON(getLocalEnrollmentsKey(), normalizedEnrollments);
+
+  const changedStudentIds = Array.from(new Set(normalizedEnrollments.map((entry) => entry.studentId).filter(Boolean)));
+  for (const studentId of changedStudentIds) {
+    invalidateStudentEnrollmentCache(studentId);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('learnflow-enrollment-changed', {
+      detail: { studentIds: changedStudentIds, timestamp: Date.now() },
+    }));
+  }
 }
 
 export function readLocalAiModels(): LocalAiModelRecord[] {

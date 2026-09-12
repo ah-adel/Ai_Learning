@@ -172,6 +172,12 @@ export function BrowseCoursesPage() {
       setCatalogCourses((current) => current.map((course) =>
         course.id === courseId ? { ...course, enrolled: true } : course,
       ));
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('learnflow-enrollment-changed', {
+          detail: { studentIds: [session.userId], timestamp: Date.now() },
+        }));
+      }
     }
 
     setSelectedCourse((course) =>

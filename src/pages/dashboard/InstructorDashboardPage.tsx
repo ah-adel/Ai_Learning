@@ -766,6 +766,12 @@ export function InstructorDashboardPage() {
           modules: course.modules ?? [],
         })),
       );
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('learnflow-course-changed', {
+          detail: { instructorId: session.userId, timestamp: Date.now() },
+        }));
+      }
       resetUploadStatusState();
       setIsBuilderOpen(false);
       setBuilderStep(1);

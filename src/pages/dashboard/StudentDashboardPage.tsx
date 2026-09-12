@@ -145,10 +145,20 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
       }
     };
 
+    const handleEnrollmentChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ studentIds?: string[] }>;
+      const changedStudentIds = customEvent.detail?.studentIds ?? [];
+      if (!changedStudentIds.length || changedStudentIds.includes(session.userId)) {
+        void loadCourses();
+      }
+    };
+
     void loadCourses();
+    window.addEventListener('learnflow-enrollment-changed', handleEnrollmentChange);
 
     return () => {
       isMounted = false;
+      window.removeEventListener('learnflow-enrollment-changed', handleEnrollmentChange);
     };
   }, [session?.userId]);
 
