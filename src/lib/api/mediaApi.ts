@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8005').replace(/\/$/, '');
 
 const resolveApiUrl = (endpoint: string) => {
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -15,9 +15,18 @@ export async function uploadMediaFile(
     signal?: AbortSignal;
   },
 ): Promise<string> {
+  const targetUrl = resolveApiUrl('/api/media/upload');
   const formData = new FormData();
   formData.append('file', file);
   formData.append('type', kind);
+
+  console.log('Uploading media:', {
+    url: targetUrl,
+    fileName: file.name,
+    fileSize: file.size,
+    kind,
+    mimeType: file.type,
+  });
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -41,6 +50,19 @@ export async function uploadMediaFile(
       }
     });
 
+    xhr.open('POST', targetUrl);
+
+    const bearerToken = (() => {
+      try {
+        return window.localStorage.getItem('access_token') ?? window.sessionStorage.getItem('access_token') ?? '';
+      } catch {
+        return '';
+      }
+    })();
+    if (bearerToken) {
+      xhr.setRequestHeader('Authorization', `Bearer ${bearerToken}`);
+    }
+
     xhr.addEventListener('load', () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
@@ -49,31 +71,39 @@ export async function uploadMediaFile(
             throw new Error(payload.data?.error || 'Upload response missing URL.');
           }
 
+          console.log('Media upload complete:', { url: payload.data.url, status: xhr.status });
           resolve(payload.data.url);
           return;
         } catch (error) {
-          reject(error instanceof Error ? error : new Error('Upload failed.'));
+          const err = error instanceof Error ? error : new Error('Upload failed.');
+          console.error('Upload parse error:', err);
+          reject(err);
           return;
         }
       }
 
       try {
         const payload = JSON.parse(xhr.responseText) as { error?: string };
-        reject(new Error(payload.error || 'Unable to upload media.'));
+        const message = payload.error || 'Unable to upload media.';
+        console.error('Upload failed with server response:', { status: xhr.status, responseText: xhr.responseText, message });
+        reject(new Error(message));
       } catch {
-        reject(new Error('Unable to upload media.'));
+        const message = `Unable to upload media. Status: ${xhr.status}`;
+        console.error('Upload failed without JSON payload:', { status: xhr.status, responseText: xhr.responseText, message });
+        reject(new Error(message));
       }
     });
 
     xhr.addEventListener('error', () => {
+      console.error('Network error during media upload:', { url: targetUrl, status: xhr.status, readyState: xhr.readyState });
       reject(new Error('Unable to upload media.'));
     });
 
     xhr.addEventListener('abort', () => {
+      console.warn('Media upload aborted:', { url: targetUrl });
       reject(new DOMException('Upload aborted', 'AbortError'));
     });
 
-    xhr.open('POST', resolveApiUrl('/api/media/upload'));
     xhr.send(formData);
   });
 }

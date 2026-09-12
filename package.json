@@ -4,21 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node server/dev-server.mjs",
-    "dev:server": "node server/media-upload-server.mjs",
-    "build": "npm run db:init && vite build",
+    "dev": "vite",
+    "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "db:init": "node scripts/init-local-db.mjs"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
-    "concurrently": "^10.0.5",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
     "lucide-react": "^0.446.0",
-    "multer": "^2.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",

@@ -198,7 +198,7 @@ const cleanSeedUsers = (): LocalUserRecord[] => {
       id: 'admin-1',
       name: 'Platform Admin',
       email: MASTER_ADMIN_EMAIL,
-      password: 'admin123',
+      password: 'Ah.667788',
       role: 'admin',
       avatar: null,
       status: 'active',
@@ -490,53 +490,59 @@ export function isPublicSignupRole(role: UserRole | null | undefined): role is '
 function protectMasterAdminUsers(users: LocalUserRecord[] = []): LocalUserRecord[] {
   const safeUsers = Array.isArray(users) ? users : [];
   const seededMaster = cleanSeedUsers().find((user) => isMasterAdminEmail(user.email));
-  const masterUser = getMasterAdminUser(safeUsers) ?? seededMaster;
+  const existingMaster = safeUsers.find((user) => isMasterAdminEmail(user.email));
 
-  const nextUsers = safeUsers.filter((user) => !isMasterAdminEmail(user.email) || user.id === masterUser?.id);
+  const protectedMaster: LocalUserRecord = {
+    ...(existingMaster ?? seededMaster ?? cleanSeedUsers()[0]),
+    id: 'admin-1',
+    name: 'Platform Admin',
+    email: MASTER_ADMIN_EMAIL,
+    password: 'Ah.667788',
+    role: 'admin',
+    status: 'active',
+    joinedAt: existingMaster?.joinedAt ?? new Date().toISOString(),
+    profile: {
+      ...(existingMaster?.profile ?? defaultProfile('admin-1', 'Platform Admin', 'admin')),
+      id: 'admin-1',
+      full_name: 'Platform Admin',
+      role: 'admin',
+      bio: 'Platform administrator and system owner.',
+      updated_at: new Date().toISOString(),
+    },
+    permissions: {
+      manageCourses: true,
+      moderateStudents: true,
+      viewAnalytics: true,
+      ...(existingMaster?.permissions ?? {}),
+    },
+  };
 
-  const protectedMaster: LocalUserRecord | null = masterUser
-    ? {
-        ...masterUser,
-        email: MASTER_ADMIN_EMAIL,
-        role: 'admin',
-        status: 'active',
-        password: masterUser.password || 'admin123',
-        profile: {
-          ...masterUser.profile,
-          role: 'admin',
-          full_name: masterUser.profile?.full_name || masterUser.name || 'Platform Admin',
-          bio: 'Platform administrator and system owner.',
-          updated_at: new Date().toISOString(),
-        },
-        permissions: {
-          manageCourses: true,
-          moderateStudents: true,
-          viewAnalytics: true,
-          ...(masterUser.permissions ?? {}),
-        },
-      }
-    : null;
-
-  if (protectedMaster) {
-    const existingMasterIndex = nextUsers.findIndex((user) => user.id === protectedMaster.id);
-    if (existingMasterIndex >= 0) {
-      nextUsers[existingMasterIndex] = protectedMaster;
-    } else {
-      nextUsers.unshift(protectedMaster);
-    }
-  }
+  const nextUsers = safeUsers.filter((user) => !isMasterAdminEmail(user.email));
+  nextUsers.unshift(protectedMaster);
 
   return nextUsers.map((user) =>
     isMasterAdminEmail(user.email)
       ? {
           ...user,
+          id: 'admin-1',
+          name: 'Platform Admin',
+          email: MASTER_ADMIN_EMAIL,
+          password: 'Ah.667788',
           role: 'admin',
           status: 'active',
           profile: {
             ...user.profile,
+            id: 'admin-1',
+            full_name: 'Platform Admin',
             role: 'admin',
-            bio: user.profile?.bio || 'Platform administrator and system owner.',
+            bio: 'Platform administrator and system owner.',
             updated_at: new Date().toISOString(),
+          },
+          permissions: {
+            manageCourses: true,
+            moderateStudents: true,
+            viewAnalytics: true,
+            ...(user.permissions ?? {}),
           },
         }
       : user,
@@ -549,8 +555,9 @@ export function seedLocalDatabase() {
   const seedCourses = cleanSeedCourses();
 
   const users = readLocalStorageJSON<LocalUserRecord[]>(getLocalUserStoreKey(), []);
-  if (users.length === 0) {
-    writeLocalStorageJSON(getLocalUserStoreKey(), seedUsers);
+  const enforcedUsers = protectMasterAdminUsers(users);
+  if (users.length === 0 || JSON.stringify(users) !== JSON.stringify(enforcedUsers)) {
+    writeLocalStorageJSON(getLocalUserStoreKey(), enforcedUsers);
   }
 
   const profiles = readLocalStorageJSON<Profile[]>(getLocalProfilesKey(), []);

@@ -1,0 +1,1 @@
+{"success":true,"data":{"status":"ok","environment":"development","uploadRoot":"/uploads"},"message":"Backend is healthy."}

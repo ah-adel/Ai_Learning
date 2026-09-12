@@ -78,7 +78,9 @@ const formatDate = (value: string) =>
   });
 
 function mapInstructorRow(user: LocalUserRecord, allCourses: LocalCourseRecord[]): InstructorRow {
-  const courseIds = user.courseIds ?? allCourses.filter((course) => course.instructorId === user.id).map((course) => course.id);
+  const courseIds =
+    user.courseIds ??
+    allCourses.filter((course) => course.instructorId === user.id).map((course) => course.id);
 
   return {
     id: user.id,
@@ -89,12 +91,15 @@ function mapInstructorRow(user: LocalUserRecord, allCourses: LocalCourseRecord[]
     joinedAt: user.joinedAt ?? user.profile.created_at,
     permissions: user.permissions ?? { ...defaultPermissions },
     courseIds,
-    assignedCourses: allCourses.filter((course) => courseIds.includes(course.id) || course.instructorId === user.id),
+    assignedCourses: allCourses.filter(
+      (course) => courseIds.includes(course.id) || course.instructorId === user.id
+    ),
   };
 }
 
 export function InstructorsPage() {
   const [rows, setRows] = useState<InstructorRow[]>([]);
+  const [availableCourses, setAvailableCourses] = useState<LocalCourseRecord[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | InstructorStatus>('all');
   const [specialtyFilter, setSpecialtyFilter] = useState('all');
@@ -112,6 +117,9 @@ export function InstructorsPage() {
 
       const users = readLocalUsers().filter((user) => user.role === 'instructor');
       const allCourses = readLocalCourses();
+
+      setAvailableCourses(allCourses);
+
       const nextRows = users.map((user) => mapInstructorRow(user, allCourses));
       setRows(nextRows);
 
@@ -132,7 +140,7 @@ export function InstructorsPage() {
 
   const specialties = useMemo(
     () => Array.from(new Set(rows.map((row) => row.specialty))).sort(),
-    [rows],
+    [rows]
   );
 
   const filteredRows = useMemo(() => {
@@ -149,7 +157,7 @@ export function InstructorsPage() {
 
   const selectedInstructor = useMemo(
     () => filteredRows.find((row) => row.id === selectedId) ?? filteredRows[0] ?? null,
-    [filteredRows, selectedId],
+    [filteredRows, selectedId]
   );
 
   const openCreateModal = () => {
@@ -173,7 +181,10 @@ export function InstructorsPage() {
     setIsModalOpen(true);
   };
 
-  const updateFormValue = <K extends keyof InstructorFormState>(key: K, value: InstructorFormState[K]) => {
+  const updateFormValue = <K extends keyof InstructorFormState>(
+    key: K,
+    value: InstructorFormState[K]
+  ) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
@@ -261,13 +272,18 @@ export function InstructorsPage() {
           return user;
         }
 
-        const nextStatus: LocalUserRecord['status'] = user.status === 'active' ? 'inactive' : 'active';
+        const nextStatus: LocalUserRecord['status'] =
+          user.status === 'active' ? 'inactive' : 'active';
         return { ...user, status: nextStatus };
       });
 
       writeLocalUsers(nextUsers);
       setRows((current) =>
-        current.map((row) => (row.id === instructorId ? { ...row, status: row.status === 'active' ? 'inactive' : 'active' } : row)),
+        current.map((row) =>
+          row.id === instructorId
+            ? { ...row, status: row.status === 'active' ? 'inactive' : 'active' }
+            : row
+        )
       );
     } catch (saveError) {
       console.error('Failed to update status:', saveError);
@@ -280,7 +296,7 @@ export function InstructorsPage() {
     if (!row) return;
 
     const confirmed = window.confirm(
-      `Delete ${row.name}? This will remove the instructor profile and associated access records from the local database.`,
+      `Delete ${row.name}? This will remove the instructor profile and associated access records from the local database.`
     );
 
     if (!confirmed) return;
@@ -333,7 +349,9 @@ export function InstructorsPage() {
             <Users className="h-5 w-5 text-primary-600" />
           </div>
           <p className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">{rows.length}</p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">active mentors on the platform</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            active mentors on the platform
+          </p>
         </div>
 
         <div className="card p-5">
@@ -380,7 +398,9 @@ export function InstructorsPage() {
       <div className="card overflow-hidden">
         <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Instructor directory</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Instructor directory
+            </h2>
             <div className="flex flex-col gap-3 sm:flex-row">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -395,7 +415,9 @@ export function InstructorsPage() {
 
               <select
                 value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as 'all' | InstructorStatus)}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value as 'all' | InstructorStatus)
+                }
                 className="input-field sm:w-40"
               >
                 <option value="all">All statuses</option>
@@ -435,7 +457,10 @@ export function InstructorsPage() {
             <tbody>
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td
+                    colSpan={6}
+                    className="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400"
+                  >
                     No instructors match the current filters.
                   </td>
                 </tr>
@@ -444,26 +469,46 @@ export function InstructorsPage() {
                   <tr
                     key={row.id}
                     className={`border-t border-gray-200 transition-colors dark:border-gray-800 ${
-                      selectedInstructor?.id === row.id ? 'bg-primary-50/60 dark:bg-primary-950/20' : ''
+                      selectedInstructor?.id === row.id
+                        ? 'bg-primary-50/60 dark:bg-primary-950/20'
+                        : ''
                     }`}
                   >
                     <td className="px-5 py-4">
-                      <button type="button" className="text-left" onClick={() => setSelectedId(row.id)}>
+                      <button
+                        type="button"
+                        className="text-left"
+                        onClick={() => setSelectedId(row.id)}
+                      >
                         <p className="font-semibold text-gray-900 dark:text-white">{row.name}</p>
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{row.email}</p>
                       </button>
                     </td>
-                    <td className="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{row.specialty}</td>
-                    <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-200">{row.courseIds.length}</td>
+                    <td className="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
+                      {row.specialty}
+                    </td>
+                    <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-200">
+                      {row.courseIds.length}
+                    </td>
                     <td className="px-5 py-4">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[row.status]}`}>
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                          statusStyles[row.status]
+                        }`}
+                      >
                         {row.status}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{formatDate(row.joinedAt)}</td>
+                    <td className="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
+                      {formatDate(row.joinedAt)}
+                    </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-2">
-                        <button type="button" className="btn-secondary px-2.5 py-2" onClick={() => openEditModal(row)}>
+                        <button
+                          type="button"
+                          className="btn-secondary px-2.5 py-2"
+                          onClick={() => openEditModal(row)}
+                        >
                           <Pencil className="h-4 w-4" />
                         </button>
                         <button
@@ -498,9 +543,15 @@ export function InstructorsPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">
                   Instructor profile
                 </p>
-                <h2 className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{selectedInstructor.name}</h2>
+                <h2 className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">
+                  {selectedInstructor.name}
+                </h2>
               </div>
-              <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[selectedInstructor.status]}`}>
+              <span
+                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                  statusStyles[selectedInstructor.status]
+                }`}
+              >
                 {selectedInstructor.status}
               </span>
             </div>
@@ -508,19 +559,27 @@ export function InstructorsPage() {
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
                 <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
-                <p className="mt-2 font-medium text-gray-900 dark:text-white">{selectedInstructor.email}</p>
+                <p className="mt-2 font-medium text-gray-900 dark:text-white">
+                  {selectedInstructor.email}
+                </p>
               </div>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
                 <p className="text-sm text-gray-500 dark:text-gray-400">Specialty</p>
-                <p className="mt-2 font-medium text-gray-900 dark:text-white">{selectedInstructor.specialty}</p>
+                <p className="mt-2 font-medium text-gray-900 dark:text-white">
+                  {selectedInstructor.specialty}
+                </p>
               </div>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
                 <p className="text-sm text-gray-500 dark:text-gray-400">Joined</p>
-                <p className="mt-2 font-medium text-gray-900 dark:text-white">{formatDate(selectedInstructor.joinedAt)}</p>
+                <p className="mt-2 font-medium text-gray-900 dark:text-white">
+                  {formatDate(selectedInstructor.joinedAt)}
+                </p>
               </div>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
                 <p className="text-sm text-gray-500 dark:text-gray-400">Assigned courses</p>
-                <p className="mt-2 font-medium text-gray-900 dark:text-white">{selectedInstructor.courseIds.length}</p>
+                <p className="mt-2 font-medium text-gray-900 dark:text-white">
+                  {selectedInstructor.courseIds.length}
+                </p>
               </div>
             </div>
 
@@ -549,7 +608,9 @@ export function InstructorsPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">
                   Course overview
                 </p>
-                <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">Assigned learning tracks</h2>
+                <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
+                  Assigned learning tracks
+                </h2>
               </div>
               <BriefcaseBusiness className="h-5 w-5 text-violet-600" />
             </div>
@@ -561,11 +622,16 @@ export function InstructorsPage() {
                 </div>
               ) : (
                 selectedInstructor.assignedCourses.map((course) => (
-                  <div key={course.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
+                  <div
+                    key={course.id}
+                    className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60"
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">{course.title}</p>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{course.category}</p>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                          {course.category}
+                        </p>
                       </div>
                       <span className="rounded-full bg-primary-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
                         {course.difficulty}
@@ -591,7 +657,11 @@ export function InstructorsPage() {
                   {editingId ? 'Update account details' : 'Register a new instructor'}
                 </h2>
               </div>
-              <button type="button" onClick={() => setIsModalOpen(false)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -633,7 +703,9 @@ export function InstructorsPage() {
                   <label className="label-text">Status</label>
                   <select
                     value={form.status}
-                    onChange={(event) => updateFormValue('status', event.target.value as InstructorStatus)}
+                    onChange={(event) =>
+                      updateFormValue('status', event.target.value as InstructorStatus)
+                    }
                     className="input-field"
                   >
                     <option value="active">Active</option>
@@ -660,7 +732,10 @@ export function InstructorsPage() {
                 <label className="label-text">Permissions</label>
                 <div className="grid gap-3 sm:grid-cols-3">
                   {Object.entries(form.permissions).map(([key, value]) => (
-                    <label key={key} className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200">
+                    <label
+                      key={key}
+                      className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200"
+                    >
                       <input
                         type="checkbox"
                         checked={value}
@@ -681,8 +756,11 @@ export function InstructorsPage() {
               <div>
                 <label className="label-text">Course assignments</label>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {readLocalCourses().map((course) => (
-                    <label key={course.id} className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200">
+                  {availableCourses.map((course) => (
+                    <label
+                      key={course.id}
+                      className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-200"
+                    >
                       <input
                         type="checkbox"
                         checked={form.courseIds.includes(course.id)}
@@ -711,7 +789,11 @@ export function InstructorsPage() {
                     Delete
                   </button>
                 )}
-                <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setIsModalOpen(false)}
+                >
                   Cancel
                 </button>
                 <button type="submit" className="btn-primary">

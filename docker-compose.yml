@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  fastapi:
+    build:
+      context: ./backend_fastapi
+      dockerfile: Dockerfile
+    container_name: fastapi-app
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8005
+      WORKERS: 2
+      AI_SERVICE_URL: http://ai-service:8001
+      ENVIRONMENT: docker
+      PYTHONPATH: /app
+    ports:
+      - '8005:8005'
+    depends_on:
+      - ai-service
+    networks:
+      - app-network
+    volumes:
+      - ./backend_fastapi:/app
+      - ./backend_fastapi/uploads:/app/uploads
+      - ./backend_fastapi/logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8005/health').read()\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  ai-service:
+    build:
+      context: ./ai-model
+      dockerfile: Dockerfile
+    container_name: ai-service
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8001
+    ports:
+      - '8001:8001'
+    networks:
+      - app-network
+    volumes:
+      - ./ai-model:/app
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+networks:
+  app-network:
+    driver: bridge

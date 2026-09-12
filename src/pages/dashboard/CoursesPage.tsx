@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { ArrowRight, BookOpen, BriefcaseBusiness, CheckCircle2, Search, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -47,67 +47,79 @@ export function CoursesPage() {
 
     writeLocalEnrollments(nextEnrollments);
     setCourses((current) => current.filter((item) => item.id !== courseId));
+    
+    // إشعار باقي التطبيق بتغيير الاشتراكات
+    window.dispatchEvent(new Event('enrollmentChange'));
   };
 
-  useEffect(() => {
+  const loadCourses = useCallback(async () => {
     if (!session?.userId) {
       setLoading(false);
       setCourses([]);
       return;
     }
 
-    let isMounted = true;
+    try {
+      setLoading(true);
+      setError(null);
 
-    const loadCourses = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+      const allUsers = readLocalUsers();
+      const enrollments = readLocalEnrollments();
+      const allCourses = profile?.role === 'instructor'
+        ? await fetchInstructorCourses(session.userId)
+        : await fetchStudentEnrolledCourses(session.userId);
 
-        const allUsers = readLocalUsers();
-        const enrollments = readLocalEnrollments();
-        const allCourses = profile?.role === 'instructor'
-          ? await fetchInstructorCourses(session.userId)
-          : await fetchStudentEnrolledCourses(session.userId);
-
-        const activeCourses = profile?.role === 'instructor'
-          ? allCourses.filter((course) => course.instructorId === session.userId)
-          : allCourses.filter((course) =>
-              enrollments.some((entry) => entry.studentId === session.userId && entry.courseId === course.id),
-            );
-
-        const mappedCourses: CourseRow[] = activeCourses.map((course) => {
-          const instructor = allUsers.find((user) => user.id === course.instructorId);
-          const enrollment = enrollments.find(
-            (entry) => entry.studentId === session.userId && entry.courseId === course.id,
+      const activeCourses = profile?.role === 'instructor'
+        ? allCourses.filter((course) => course.instructorId === session.userId)
+        : allCourses.filter((course) =>
+            enrollments.some((entry) => entry.studentId === session.userId && entry.courseId === course.id),
           );
 
-          return {
-            id: course.id,
-            title: course.title,
-            description: course.description,
-            category: course.category,
-            instructorName: instructor?.profile.full_name ?? 'Instructor',
-            progress: enrollment?.progress ?? 0,
-            status: enrollment?.status ?? 'active',
-            lessonsCount: course.modules?.reduce((sum, module) => sum + module.lessons.length, 0) ?? 0,
-          };
-        });
+      const mappedCourses: CourseRow[] = activeCourses.map((course) => {
+        const instructor = allUsers.find((user) => user.id === course.instructorId);
+        const enrollment = enrollments.find(
+          (entry) => entry.studentId === session.userId && entry.courseId === course.id,
+        );
 
-        if (isMounted) setCourses(mappedCourses);
-      } catch (loadError) {
-        console.error('Failed to load user course list:', loadError);
-        if (isMounted) setError('Unable to load your course list from the saved data source.');
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
+        return {
+          id: course.id,
+          title: course.title,
+          description: course.description,
+          category: course.category,
+          instructorName: instructor?.profile.full_name ?? 'Instructor',
+          progress: enrollment?.progress ?? 0,
+          status: enrollment?.status ?? 'active',
+          lessonsCount: course.modules?.reduce((sum, module) => sum + module.lessons.length, 0) ?? 0,
+        };
+      });
 
+      setCourses(mappedCourses);
+    } catch (loadError) {
+      console.error('Failed to load user course list:', loadError);
+      setError('Unable to load your course list from the saved data source.');
+    } finally {
+      setLoading(false);
+    }
+  }, [profile?.role, session?.userId]);
+
+  useEffect(() => {
     void loadCourses();
 
-    return () => {
-      isMounted = false;
+    // الاستماع لأي تغيير في التسجيلات (طالب) أو إنشاء الكورسات (مدرس)
+    const handleSync = () => {
+      void loadCourses();
     };
-  }, [profile?.role, session?.userId]);
+
+    window.addEventListener('enrollmentChange', handleSync);
+    window.addEventListener('courseChange', handleSync);
+    window.addEventListener('storage', handleSync);
+
+    return () => {
+      window.removeEventListener('enrollmentChange', handleSync);
+      window.removeEventListener('courseChange', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, [loadCourses]);
 
   const filteredCourses = useMemo(() => {
     return courses.filter((course) => {
