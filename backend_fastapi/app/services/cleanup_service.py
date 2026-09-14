@@ -85,10 +85,6 @@ def resolve_server_storage_path(value: str | None, project_root: str | Path = ".
         root / "uploads" / Path(relative_path).name,
         root / "uploads" / "videos" / Path(relative_path).name,
         root / "uploads" / "attachments" / Path(relative_path).name,
-        root / "public" / relative_path.lstrip("/"),
-        root / "public" / "uploads" / Path(relative_path).name,
-        root / "public" / "uploads" / "videos" / Path(relative_path).name,
-        root / "public" / "uploads" / "attachments" / Path(relative_path).name,
     ]
 
     for candidate in candidates:

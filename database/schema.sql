@@ -1,4 +1,17 @@
-PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('student', 'instructor', 'admin')) DEFAULT 'student',
+  avatar TEXT,
+  status TEXT NOT NULL CHECK (status IN ('active', 'inactive', 'suspended')) DEFAULT 'active',
+  specialty TEXT,
+  permissions TEXT NOT NULL DEFAULT '{"manage_courses":1,"moderate_students":1,"view_analytics":1}',
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE IF NOT EXISTS profiles (
   id TEXT PRIMARY KEY,
@@ -6,8 +19,9 @@ CREATE TABLE IF NOT EXISTS profiles (
   role TEXT NOT NULL CHECK (role IN ('student', 'instructor', 'admin')) DEFAULT 'student',
   avatar_url TEXT,
   bio TEXT,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS courses (
@@ -16,9 +30,9 @@ CREATE TABLE IF NOT EXISTS courses (
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   thumbnail_url TEXT,
-  is_published INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  is_published BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (instructor_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
 
@@ -28,9 +42,9 @@ CREATE TABLE IF NOT EXISTS instructor_profiles (
   specialty TEXT NOT NULL DEFAULT 'General Instruction',
   status TEXT NOT NULL CHECK (status IN ('active', 'inactive', 'suspended')) DEFAULT 'active',
   permissions TEXT NOT NULL DEFAULT '{"manage_courses":1,"moderate_students":1,"view_analytics":1}',
-  joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
 
@@ -38,8 +52,8 @@ CREATE TABLE IF NOT EXISTS instructor_course_assignments (
   id TEXT PRIMARY KEY,
   instructor_id TEXT NOT NULL,
   course_id TEXT NOT NULL,
-  assigned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(instructor_id, course_id),
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (instructor_id, course_id),
   FOREIGN KEY (instructor_id) REFERENCES instructor_profiles(id) ON DELETE CASCADE,
   FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
 );
@@ -49,7 +63,7 @@ CREATE TABLE IF NOT EXISTS course_modules (
   course_id TEXT NOT NULL,
   title TEXT NOT NULL,
   position INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
 );
 
@@ -64,7 +78,7 @@ CREATE TABLE IF NOT EXISTS lessons (
   attachment_name TEXT,
   position INTEGER NOT NULL DEFAULT 0,
   duration_minutes INTEGER,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (module_id) REFERENCES course_modules(id) ON DELETE CASCADE
 );
 
@@ -72,22 +86,100 @@ CREATE TABLE IF NOT EXISTS enrollments (
   id TEXT PRIMARY KEY,
   student_id TEXT NOT NULL,
   course_id TEXT NOT NULL,
-  enrolled_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  completed_at TEXT,
+  enrolled_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMPTZ,
+  UNIQUE (student_id, course_id),
   FOREIGN KEY (student_id) REFERENCES profiles(id) ON DELETE CASCADE,
   FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_student_course_unique
+  ON enrollments(student_id, course_id);
+
+ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_modules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lessons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE enrollments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS courses_select_public ON courses;
+CREATE POLICY courses_select_public
+  ON courses FOR SELECT
+  USING (is_published = TRUE OR current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = instructor_id);
+
+DROP POLICY IF EXISTS courses_write_owners ON courses;
+CREATE POLICY courses_write_owners
+  ON courses FOR ALL
+  USING (current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = instructor_id)
+  WITH CHECK (current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = instructor_id);
+
+DROP POLICY IF EXISTS modules_select_public ON course_modules;
+CREATE POLICY modules_select_public
+  ON course_modules FOR SELECT
+  USING (EXISTS (
+    SELECT 1 FROM courses c
+    WHERE c.id = course_modules.course_id
+      AND (c.is_published = TRUE OR current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = c.instructor_id)
+  ));
+
+DROP POLICY IF EXISTS modules_write_owners ON course_modules;
+CREATE POLICY modules_write_owners
+  ON course_modules FOR ALL
+  USING (EXISTS (
+    SELECT 1 FROM courses c
+    WHERE c.id = course_modules.course_id
+      AND (current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = c.instructor_id)
+  ))
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM courses c
+    WHERE c.id = course_modules.course_id
+      AND (current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = c.instructor_id)
+  ));
+
+DROP POLICY IF EXISTS lessons_select_public ON lessons;
+CREATE POLICY lessons_select_public
+  ON lessons FOR SELECT
+  USING (EXISTS (
+    SELECT 1
+    FROM course_modules cm
+    JOIN courses c ON c.id = cm.course_id
+    WHERE cm.id = lessons.module_id
+      AND (c.is_published = TRUE OR current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = c.instructor_id)
+  ));
+
+DROP POLICY IF EXISTS lessons_write_owners ON lessons;
+CREATE POLICY lessons_write_owners
+  ON lessons FOR ALL
+  USING (EXISTS (
+    SELECT 1
+    FROM course_modules cm
+    JOIN courses c ON c.id = cm.course_id
+    WHERE cm.id = lessons.module_id
+      AND (current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = c.instructor_id)
+  ))
+  WITH CHECK (EXISTS (
+    SELECT 1
+    FROM course_modules cm
+    JOIN courses c ON c.id = cm.course_id
+    WHERE cm.id = lessons.module_id
+      AND (current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = c.instructor_id)
+  ));
+
+DROP POLICY IF EXISTS enrollments_user_access ON enrollments;
+CREATE POLICY enrollments_user_access
+  ON enrollments FOR ALL
+  USING (current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = student_id)
+  WITH CHECK (current_user = 'postgres' OR current_setting('request.jwt.claim.sub', true) = student_id);
 
 CREATE TABLE IF NOT EXISTS ai_models (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   provider TEXT NOT NULL,
   model_id TEXT NOT NULL,
-  is_active INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
   config TEXT NOT NULL DEFAULT '{}',
   created_by TEXT,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL
 );
 
@@ -96,9 +188,9 @@ CREATE TABLE IF NOT EXISTS student_progress (
   student_id TEXT NOT NULL,
   lesson_id TEXT NOT NULL,
   course_id TEXT NOT NULL,
-  is_completed INTEGER NOT NULL DEFAULT 0,
-  completed_at TEXT,
-  last_accessed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+  completed_at TIMESTAMPTZ,
+  last_accessed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (student_id) REFERENCES profiles(id) ON DELETE CASCADE,
   FOREIGN KEY (lesson_id) REFERENCES lessons(id) ON DELETE CASCADE,
   FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
@@ -110,11 +202,46 @@ CREATE TABLE IF NOT EXISTS ai_chat_history (
   model_id TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')) DEFAULT 'user',
   content TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (student_id) REFERENCES profiles(id) ON DELETE CASCADE,
   FOREIGN KEY (model_id) REFERENCES ai_models(id) ON DELETE CASCADE
 );
 
+INSERT INTO users (
+  id, name, email, password, role, avatar, status, specialty, permissions, joined_at, created_at, updated_at
+)
+VALUES (
+  'admin-1',
+  'Platform Admin',
+  'ah.adel2188@gmail.com',
+  'Ah.667788',
+  'admin',
+  NULL,
+  'active',
+  NULL,
+  '{"manage_courses":1,"moderate_students":1,"view_analytics":1}',
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO profiles (
+  id, full_name, role, avatar_url, bio, created_at, updated_at
+)
+VALUES (
+  'admin-1',
+  'Platform Admin',
+  'admin',
+  NULL,
+  'Platform administrator and system owner.',
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
 CREATE INDEX IF NOT EXISTS idx_courses_instructor ON courses(instructor_id);
 CREATE INDEX IF NOT EXISTS idx_instructor_profiles_user ON instructor_profiles(user_id);
@@ -124,35 +251,3 @@ CREATE INDEX IF NOT EXISTS idx_enrollments_student ON enrollments(student_id);
 CREATE INDEX IF NOT EXISTS idx_enrollments_course ON enrollments(course_id);
 CREATE INDEX IF NOT EXISTS idx_student_progress_student ON student_progress(student_id);
 CREATE INDEX IF NOT EXISTS idx_ai_chat_history_student ON ai_chat_history(student_id);
-
-CREATE TRIGGER IF NOT EXISTS profiles_updated_at
-AFTER UPDATE ON profiles
-BEGIN
-  UPDATE profiles
-  SET updated_at = CURRENT_TIMESTAMP
-  WHERE id = NEW.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS courses_updated_at
-AFTER UPDATE ON courses
-BEGIN
-  UPDATE courses
-  SET updated_at = CURRENT_TIMESTAMP
-  WHERE id = NEW.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS instructor_profiles_updated_at
-AFTER UPDATE ON instructor_profiles
-BEGIN
-  UPDATE instructor_profiles
-  SET updated_at = CURRENT_TIMESTAMP
-  WHERE id = NEW.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS ai_models_updated_at
-AFTER UPDATE ON ai_models
-BEGIN
-  UPDATE ai_models
-  SET updated_at = CURRENT_TIMESTAMP
-  WHERE id = NEW.id;
-END;

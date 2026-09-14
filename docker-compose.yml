@@ -1,10 +1,29 @@
-version: '3.8'
-
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: educational_platform
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d educational_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   fastapi:
     build:
-      context: ./backend_fastapi
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend_fastapi/Dockerfile
     container_name: fastapi-app
     restart: unless-stopped
     environment:
@@ -14,14 +33,22 @@ services:
       AI_SERVICE_URL: http://ai-service:8001
       ENVIRONMENT: docker
       PYTHONPATH: /app
+      APP_DATA_DIR: /app/data
+      APP_UPLOAD_DIR: /app/uploads
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/educational_platform
     ports:
       - '8005:8005'
     depends_on:
-      - ai-service
+      postgres:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
     networks:
       - app-network
     volumes:
-      - ./backend_fastapi:/app
+      - ./backend_fastapi:/app:delegated
+      - ./database:/app/database:ro
+      - ./data:/app/data
       - ./backend_fastapi/uploads:/app/uploads
       - ./backend_fastapi/logs:/app/logs
     healthcheck:
@@ -52,6 +79,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+volumes:
+  postgres_data:
 
 networks:
   app-network:

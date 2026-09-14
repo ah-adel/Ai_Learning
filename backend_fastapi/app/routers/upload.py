@@ -1,19 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
-from fastapi.responses import JSONResponse
-from starlette.staticfiles import StaticFiles
+from app.services.media_service import process_media_upload
 
 router = APIRouter()
-UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def _safe_filename(name: str) -> str:
-    candidate = Path(name).name.replace("/", "_").replace("\\", "_")
-    return candidate or "upload.bin"
 
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
@@ -21,10 +11,8 @@ async def upload_single_file(file: UploadFile = File(...)) -> dict[str, str]:
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"error": "No file provided.", "details": {"field": "file"}})
 
-    safe_name = _safe_filename(file.filename)
-    destination = UPLOAD_DIR / safe_name
-    destination.write_bytes(await file.read())
-    return {"url": f"/uploads/{safe_name}"}
+    result = await process_media_upload(file, "video" if (file.content_type or "").startswith("video/") else "attachment")
+    return {"url": str(result["url"])}
 
 
 @router.post("/media/upload", status_code=status.HTTP_201_CREATED)
@@ -38,8 +26,6 @@ async def upload_multiple_files(files: list[UploadFile] = File(...)) -> dict[str
     for file in files:
         if not file.filename:
             continue
-        safe_name = _safe_filename(file.filename)
-        destination = UPLOAD_DIR / safe_name
-        destination.write_bytes(await file.read())
-        urls.append(f"/uploads/{safe_name}")
+        result = await process_media_upload(file, "video" if (file.content_type or "").startswith("video/") else "attachment")
+        urls.append(str(result["url"]))
     return {"urls": urls}

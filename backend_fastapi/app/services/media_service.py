@@ -3,15 +3,17 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, UploadFile, status
 
+from app.core.config import settings
 from app.services.cleanup_service import cleanup_deletion_artifacts
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-UPLOAD_ROOT = PROJECT_ROOT / "uploads"
+UPLOAD_ROOT = settings.upload_dir
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_MIME_TYPES = {
@@ -80,8 +82,8 @@ async def process_media_upload(file: UploadFile, type_value: str | None = None, 
     stored_name = f"{safe_name}-{digest}{extension}"
     file_path = target_dir / stored_name
 
-    content = await file.read()
-    file_path.write_bytes(content)
+    with file_path.open("wb") as destination:
+        shutil.copyfileobj(file.file, destination, length=1024 * 1024)
 
     route = f"/uploads/{get_upload_folder(raw_kind)}/{stored_name}"
     return {
