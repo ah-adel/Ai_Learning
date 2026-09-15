@@ -16,6 +16,7 @@ import { CoursesPage } from '@/pages/dashboard/CoursesPage';
 import { CourseDetailPage } from '@/pages/dashboard/CourseDetailPage';
 import { BrowseCoursesPage } from '@/pages/dashboard/BrowseCoursesPage';
 import { StudentsPage } from '@/pages/dashboard/StudentsPage';
+import { AdminStudentsPage } from '@/pages/dashboard/AdminStudentsPage';
 import { InstructorsPage } from '@/pages/dashboard/InstructorsPage';
 import { AiModelsPage } from '@/pages/dashboard/AiModelsPage';
 import { SettingsPage } from '@/pages/dashboard/SettingsPage';
@@ -200,7 +201,7 @@ export default function App() {
                 path="/students"
                 element={
                   <ProtectedRoute allowedRoles={['instructor', 'admin']}>
-                    <StudentsPage />
+                    <AdminStudentsPage />
                   </ProtectedRoute>
                 }
               />

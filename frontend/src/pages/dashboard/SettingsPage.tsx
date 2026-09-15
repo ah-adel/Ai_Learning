@@ -13,9 +13,12 @@ import {
   type LocalUserRecord,
 } from '@/lib/localDb';
 import { isValidEmail, normalizeSettingsText, sanitizeEmail } from '@/lib/validation';
+import { AdminSettingsEnhancements } from '@/components/dashboard/AdminSettingsEnhancements';
+import { useTranslation } from '@/context/I18nContext';
 
 export function SettingsPage() {
   const { session, user, profile } = useAuth();
+  const { t } = useTranslation();
   const currentUserEmail = (session?.email ?? user?.email ?? '').trim().toLowerCase();
   const isOwnerSession = currentUserEmail === getMasterAdminEmail().toLowerCase();
   const [settings, setSettings] = useState<LocalPlatformSettings>(readLocalSettings());
@@ -205,8 +208,8 @@ export function SettingsPage() {
 
     const confirmed = window.confirm(
       isMasterAdminEmail(adminEmail)
-        ? 'Delete your own master admin account? This action is irreversible and requires your owner session.'
-        : 'Remove this secondary administrator account? This cannot be undone.',
+        ? t('common.deleteConfirm')
+        : t('common.deleteConfirm'),
     );
     if (!confirmed) return;
 
@@ -252,9 +255,9 @@ export function SettingsPage() {
     <div className="space-y-6">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
-          Platform settings
+          {t('settings.platformSettings')}
         </p>
-        <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
+        <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{t('settings.title')}</h1>
       </div>
 
       {error && (
@@ -277,14 +280,14 @@ export function SettingsPage() {
               <UserRound className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">Profile</p>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Admin profile</h2>
+              <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">{t('common.profile')}</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('common.adminProfile')}</h2>
             </div>
           </div>
 
           <div className="mt-5 space-y-4">
             <div>
-              <label className="label-text">Full name</label>
+              <label className="label-text">{t('common.fullName')}</label>
               <input
                 value={profileForm.fullName}
                 onChange={(event) => setProfileForm((current) => ({ ...current, fullName: event.target.value }))}
@@ -293,7 +296,7 @@ export function SettingsPage() {
             </div>
 
             <div>
-              <label className="label-text">Email</label>
+              <label className="label-text">{t('common.email')}</label>
               <input
                 type="email"
                 value={profileForm.email}
@@ -303,7 +306,7 @@ export function SettingsPage() {
             </div>
 
             <div>
-              <label className="label-text">Bio</label>
+              <label className="label-text">{t('common.bio')}</label>
               <textarea
                 rows={4}
                 value={profileForm.bio}
@@ -402,16 +405,16 @@ export function SettingsPage() {
                 <Bell className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">System config</p>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Access and automation</h2>
+                <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">{t('common.systemConfig')}</p>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('common.accessAutomation')}</h2>
               </div>
             </div>
 
             <div className="mt-5 space-y-4">
               <label className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/60">
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-white">Allow student signup</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Enable public registration.</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{t('common.allowSignup')}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{t('common.publicRegistration')}</p>
                 </div>
                 <input
                   type="checkbox"
@@ -423,8 +426,8 @@ export function SettingsPage() {
 
               <label className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/60">
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-white">Require email verification</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Verify new accounts before access.</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{t('common.requireVerification')}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{t('common.verifyNewAccounts')}</p>
                 </div>
                 <input
                   type="checkbox"
@@ -436,8 +439,8 @@ export function SettingsPage() {
 
               <label className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/60">
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-white">Auto-publish courses</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Send newly created courses live immediately.</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{t('common.autoPublish')}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{t('common.publishImmediately')}</p>
                 </div>
                 <input
                   type="checkbox"
@@ -564,9 +567,11 @@ export function SettingsPage() {
       <div className="flex justify-end">
         <button type="button" onClick={saveSettings} className="btn-primary">
           <Save className="h-4 w-4" />
-          Save settings
+          {t('common.saveSettings')}
         </button>
       </div>
+
+      {isAdmin && <AdminSettingsEnhancements />}
     </div>
   );
 }

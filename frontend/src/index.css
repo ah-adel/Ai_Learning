@@ -4,6 +4,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .dark .rounded-full.bg-gray-100.px-2.py-1.text-xs.capitalize {
+    @apply bg-gray-800 text-gray-200;
+  }
+}
+
 @layer base {
   * {
     @apply border-gray-200 dark:border-gray-800;
@@ -12,6 +18,7 @@
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-align: start;
   }
 
   body {
@@ -43,6 +50,36 @@
 
   .label-text {
     @apply mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300;
+  }
+
+  .language-toggle {
+    @apply relative inline-flex h-9 items-center gap-0.5 rounded-full border border-gray-200 bg-gray-100 p-1 text-xs font-bold text-gray-500 shadow-inner transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500/40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400;
+  }
+
+  .language-toggle__option {
+    @apply relative z-10 flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 transition-all duration-200 ease-out;
+  }
+
+  .language-toggle__option--active {
+    @apply bg-white text-primary-700 shadow-md dark:bg-gray-700 dark:text-primary-300;
+  }
+}
+
+@layer utilities {
+  [dir='rtl'] .flip-in-rtl {
+    transform: scaleX(-1);
+  }
+
+  .directional-icon {
+    transition: transform 180ms ease-out;
+  }
+
+  [dir='rtl'] .directional-icon {
+    transform: scaleX(-1);
+  }
+
+  [dir='rtl'] .sidebar-scrollbar {
+    direction: rtl;
   }
 }
 

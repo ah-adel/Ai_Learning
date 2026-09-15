@@ -76,6 +76,7 @@ interface AdminStats {
   total_courses: number;
   published_courses: number;
   total_enrollments: number;
+  total_revenue: number;
 }
 
 interface AdminCourseRow {
@@ -292,6 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       total_courses: Number(stats?.total_courses ?? 0),
       published_courses: Number(stats?.published_courses ?? 0),
       total_enrollments: Number(stats?.total_enrollments ?? 0),
+      total_revenue: Number(stats?.total_revenue ?? 0),
     };
   }
 

@@ -12,6 +12,13 @@
     <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
+    <script>
+      (() => {
+        const savedLanguage = window.localStorage.getItem('learnflow-language');
+        document.documentElement.lang = savedLanguage === 'ar' ? 'ar' : 'en';
+        document.documentElement.dir = 'ltr';
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

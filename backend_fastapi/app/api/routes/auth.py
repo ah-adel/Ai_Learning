@@ -56,6 +56,7 @@ async def sign_up(payload: SignUpRequest) -> ApiSuccessResponse[dict[str, Any]]:
         "password": normalized_password,
         "role": payload.role,
         "status": "active",
+        "verification_status": "pending" if payload.role == "instructor" else "approved",
         "avatar": None,
         "permissions": {"manage_courses": 1, "moderate_students": 1, "view_analytics": 1},
         "joined_at": now,

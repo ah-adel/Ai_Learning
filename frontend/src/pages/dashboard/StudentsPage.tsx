@@ -19,6 +19,7 @@ import {
   type LocalEnrollmentRecord,
 } from '@/lib/localDb';
 import { useAuth } from '@/context/AuthContext';
+import { useTranslation } from '@/context/I18nContext';
 
 type StudentRow = {
   id: string;
@@ -38,6 +39,7 @@ type StudentRow = {
 };
 
 export function StudentsPage() {
+  const { t } = useTranslation();
   const { session, profile } = useAuth();
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [search, setSearch] = useState('');
@@ -205,7 +207,7 @@ export function StudentsPage() {
   };
 
   if (loading) {
-    return <LoadingState label="Loading students…" className="min-h-[30vh]" />;
+    return <LoadingState label={t('common.loading')} className="min-h-[30vh]" />;
   }
 
   return (
@@ -213,9 +215,9 @@ export function StudentsPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
-            Student operations
+            {t('students.operations')}
           </p>
-          <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">Students</h1>
+          <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{t('students.title')}</h1>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -224,7 +226,7 @@ export function StudentsPage() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search students"
+              placeholder={t('students.search')}
               className="input-field w-full pl-10 sm:w-64"
             />
           </div>
@@ -234,7 +236,7 @@ export function StudentsPage() {
             onChange={(event) => setCourseFilter(event.target.value)}
             className="input-field sm:w-52"
           >
-            <option value="all">All courses</option>
+            <option value="all">{t('students.allCourses')}</option>
             {courses.map((course) => (
               <option key={course.id} value={course.id}>
                 {course.title}
@@ -255,9 +257,9 @@ export function StudentsPage() {
         <div className="card overflow-hidden">
           <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Student directory</h2>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('students.directory')}</h2>
               <span className="rounded-full bg-primary-100 px-2.5 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
-                {filteredStudents.length} students
+                {filteredStudents.length} {t('students.activeStudents')}
               </span>
             </div>
           </div>
@@ -266,10 +268,10 @@ export function StudentsPage() {
             <table className="min-w-full text-left">
               <thead className="bg-gray-50 text-xs uppercase tracking-[0.12em] text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
                 <tr>
-                  <th className="px-5 py-3">Student</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Courses</th>
-                  <th className="px-5 py-3">Progress</th>
+                  <th className="px-5 py-3">{t('students.student')}</th>
+                  <th className="px-5 py-3">{t('students.status')}</th>
+                  <th className="px-5 py-3">{t('students.courses')}</th>
+                  <th className="px-5 py-3">{t('students.progress')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -300,7 +302,7 @@ export function StudentsPage() {
                             : 'bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-300'
                         }`}
                       >
-                        {student.status === 'active' ? 'Active' : 'Suspended'}
+                        {student.status === 'active' ? t('common.active') : t('common.suspended')}
                       </button>
                     </td>
                     <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-200">{student.courseCount}</td>
@@ -331,7 +333,7 @@ export function StudentsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-                      Student profile
+                      {t('students.profile')}
                     </p>
                     <h2 className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{selectedStudent.name}</h2>
                   </div>
@@ -342,7 +344,7 @@ export function StudentsPage() {
 
                 <div className="mt-5 space-y-4 text-sm text-gray-600 dark:text-gray-300">
                   <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/60">
-                    <span>Email</span>
+                    <span>{t('common.email')}</span>
                     <span className="font-medium text-gray-900 dark:text-white">{selectedStudent.email}</span>
                   </div>
                   <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/60">
@@ -350,7 +352,7 @@ export function StudentsPage() {
                     <span className="font-medium text-gray-900 dark:text-white">{selectedStudent.status}</span>
                   </div>
                   <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/60">
-                    <span>Last active</span>
+                    <span>{t('common.lastActive')}</span>
                     <span className="font-medium text-gray-900 dark:text-white">{selectedStudent.lastActive}</span>
                   </div>
                 </div>
@@ -362,7 +364,7 @@ export function StudentsPage() {
                     <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
                       Enrollment manager
                     </p>
-                    <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">Course progress</h2>
+                    <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{t('common.courseProgress')}</h2>
                   </div>
                   <GraduationCap className="h-5 w-5 text-primary-500" />
                 </div>
@@ -411,8 +413,8 @@ export function StudentsPage() {
             </>
           ) : (
             <EmptyState
-              title="No students found"
-              description="No students match the current filters. Try a broader name or course filter."
+              title={t('common.noStudents')}
+              description={t('common.noStudentsDescription')}
               icon={<Users className="h-8 w-8" />}
             />
           )}

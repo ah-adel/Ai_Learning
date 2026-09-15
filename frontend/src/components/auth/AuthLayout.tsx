@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { GraduationCap } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { LanguageToggle } from '@/components/LanguageToggle';
 
 interface AuthLayoutProps {
   children: ReactNode;
@@ -19,10 +20,13 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
               <GraduationCap className="h-6 w-6 text-white" />
             </div>
             <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">
-              EduPlatform
+              LearnFlow AI
             </span>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <LanguageToggle />
+            <ThemeToggle />
+          </div>
         </div>
 
         {/* Card */}

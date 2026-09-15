@@ -11,11 +11,12 @@ import {
   Sparkles,
   Wand2,
 } from 'lucide-react';
+import { useTranslation, type TranslationKey } from '@/context/I18nContext';
 
 type ModelProfile = {
   id: string;
-  name: string;
-  role: string;
+  nameKey: TranslationKey;
+  roleKey: TranslationKey;
   accent: string;
   prompt: string;
 };
@@ -30,24 +31,24 @@ type ChatMessage = {
 const MODEL_PROFILES: ModelProfile[] = [
   {
     id: 'tutor-1',
-    name: 'Coach Pro',
-    role: 'Study coach',
+    nameKey: 'ai.coachPro',
+    roleKey: 'ai.studyCoach',
     accent: 'from-violet-500 to-indigo-600',
     prompt:
       'You are a helpful student learning coach. Explain concepts clearly, give examples, and break steps into practical actions.',
   },
   {
     id: 'tutor-2',
-    name: 'Code Mentor',
-    role: 'Software mentor',
+    nameKey: 'ai.codeMentor',
+    roleKey: 'ai.softwareMentor',
     accent: 'from-cyan-500 to-blue-600',
     prompt:
       'You are a code mentor who explains logic, patterns, and debugging steps. Use precise examples and concise guidance.',
   },
   {
     id: 'tutor-3',
-    name: 'Project Planner',
-    role: 'Strategy coach',
+    nameKey: 'ai.projectPlanner',
+    roleKey: 'ai.strategyCoach',
     accent: 'from-emerald-500 to-teal-600',
     prompt:
       'You are a project planning coach. Turn learning goals into checklists, milestones, and clear next steps.',
@@ -57,23 +58,23 @@ const MODEL_PROFILES: ModelProfile[] = [
 const STORAGE_KEY = 'eduplatform_ai_tutor_chat_history';
 const MODEL_KEY = 'eduplatform_ai_tutor_selected_model';
 
-function getDefaultMessages(): ChatMessage[] {
+function getDefaultMessages(welcome: string): ChatMessage[] {
   return [
     {
       id: 'welcome-message',
       role: 'assistant',
       model: 'tutor-1',
-      content: `Hi! I can help with course concepts, project planning, and coding practice. Ask me to explain a topic, outline a study plan, or review a snippet of code.`,
+      content: welcome,
     },
   ];
 }
 
-function buildTutorResponse(modelId: string, prompt: string): string {
+function buildTutorResponse(modelId: string, prompt: string, t: (key: TranslationKey) => string): string {
   const selectedModel = MODEL_PROFILES.find((model) => model.id === modelId) ?? MODEL_PROFILES[0];
   const normalizedPrompt = prompt.trim();
 
   if (!normalizedPrompt) {
-    return `I’m ready to help with your learning plan. Try asking, “Can you explain the key idea behind this lesson?”`;
+    return t('ai.emptyPrompt');
   }
 
   const lowerPrompt = normalizedPrompt.toLowerCase();
@@ -81,81 +82,58 @@ function buildTutorResponse(modelId: string, prompt: string): string {
   const asksForPlan = /plan|roadmap|schedule|study plan|next steps|milestone/i.test(lowerPrompt);
 
   if (asksForCode) {
-    return `## ${selectedModel.name} guidance
+    return `## ${t(selectedModel.nameKey)}
 
-Here’s a practical way to think about it:
+${t('ai.responseIntro')}
 
-1. Define the goal of the code you want to build.
-2. Break the problem into small steps.
-3. Write the simplest version first and test it.
-4. Improve readability and edge cases after the first pass.
-
-### Example
-\`\`\`tsx
-const studyPlan = [
-  'Review concept notes',
-  'Try a small practice exercise',
-  'Reflect on mistakes and retry',
-];
-
-console.log('Today\'s focus:', studyPlan[0]);
-\`\`\`
-
-If you want, send the exact code or error and I can walk through it step by step.`;
+- ${t('ai.startCore')}
+- ${t('ai.smallestExample')}
+- ${t('ai.testAssumption')}
+- ${t('ai.summarizeLesson')}`;
   }
 
   if (asksForPlan) {
-    return `## Recommended study plan
+    return `## ${t('ai.studyPlan')}
 
-For this topic, I’d structure it like this:
-
-- **Step 1:** Understand the core concept and the key vocabulary.
-- **Step 2:** Review one concrete example or mini exercise.
-- **Step 3:** Practice with one hands-on task.
-- **Step 4:** Reflect on mistakes and summarize what changed.
-
-### Example checklist
-- [ ] Read the lesson summary
-- [ ] Complete one guided exercise
-- [ ] Write 3 notes about what you learned
-- [ ] Review the toughest concept before the next session
-
-This keeps learning focused without overwhelming you.`;
+  - ${t('ai.startCore')}
+  - ${t('ai.smallestExample')}
+  - ${t('ai.testAssumption')}
+  - ${t('ai.summarizeLesson')}`;
   }
 
-  return `## ${selectedModel.role}
+  return `## ${t(selectedModel.roleKey)}
 
-${selectedModel.prompt}
+${t('ai.responseIntro')}
 
-Here’s the most useful way to approach your question:
+- ${t('ai.startCore')}
+- ${t('ai.smallestExample')}
+- ${t('ai.testAssumption')}
+- ${t('ai.summarizeLesson')}
 
-- Start with the core concept rather than the full implementation.
-- Identify the smallest example that demonstrates the idea.
-- Test one assumption at a time.
-- Summarize the lesson in your own words.
+### ${t('ai.examplePattern')}
+> ${t('ai.responseBody')}
 
-### Example response pattern
-> The key idea is to focus on the underlying behavior first, then connect it to the actual tooling or code.
-
-That lets you learn more quickly without memorizing steps blindly.`;
+${t('ai.responseClose')}`;
 }
 
 export const AITutorChat = memo(function AITutorChat() {
+  const { language, t } = useTranslation();
   const [selectedModelId, setSelectedModelId] = useState<string>(() => {
     if (typeof window === 'undefined') return MODEL_PROFILES[0].id;
     return localStorage.getItem(MODEL_KEY) ?? MODEL_PROFILES[0].id;
   });
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    if (typeof window === 'undefined') return getDefaultMessages();
+    if (typeof window === 'undefined') return getDefaultMessages(t('ai.welcome'));
 
     try {
       const cached = localStorage.getItem(STORAGE_KEY);
-      if (!cached) return getDefaultMessages();
+      if (localStorage.getItem(`${STORAGE_KEY}-language`) !== language) return getDefaultMessages(t('ai.welcome'));
+      if (!cached) return getDefaultMessages(t('ai.welcome'));
       const parsed = JSON.parse(cached) as ChatMessage[];
-      return parsed.length > 0 ? parsed : getDefaultMessages();
+      return parsed.length > 0 ? parsed : getDefaultMessages(t('ai.welcome'));
     } catch {
-      return getDefaultMessages();
+      return getDefaultMessages(t('ai.welcome'));
     }
   });
 
@@ -173,7 +151,14 @@ export const AITutorChat = memo(function AITutorChat() {
         window.clearTimeout(timeoutRef.current);
       }
     };
-  }, []);
+  }, [language, t]);
+
+  useEffect(() => {
+    localStorage.setItem(`${STORAGE_KEY}-language`, language);
+    setMessages((current) => current.length === 1 && current[0].id === 'welcome-message'
+      ? getDefaultMessages(t('ai.welcome'))
+      : current);
+  }, [language, t]);
 
   const selectedModel = useMemo(
     () => MODEL_PROFILES.find((model) => model.id === selectedModelId) ?? MODEL_PROFILES[0],
@@ -214,7 +199,7 @@ export const AITutorChat = memo(function AITutorChat() {
       model: selectedModelId,
     };
 
-    const fullResponse = buildTutorResponse(selectedModelId, trimmed);
+    const fullResponse = buildTutorResponse(selectedModelId, trimmed, t);
 
     if (!isMountedRef.current) return;
 
@@ -244,7 +229,7 @@ export const AITutorChat = memo(function AITutorChat() {
     };
 
     timeoutRef.current = window.setTimeout(tick, 25);
-  }, [draft, isStreaming, selectedModelId]);
+  }, [draft, isStreaming, selectedModelId, t]);
 
   const handleModelSelect = useCallback((modelId: string) => {
     setSelectedModelId(modelId);
@@ -264,15 +249,15 @@ export const AITutorChat = memo(function AITutorChat() {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
-                AI Tutor
+                {t('ai.tutor')}
               </p>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Student learning assistant</h2>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">{t('ai.studentAssistant')}</h2>
             </div>
           </div>
 
           <div className="relative">
             <label className="sr-only" htmlFor="ai-model-select">
-              Select AI model
+              {t('ai.selectModel')}
             </label>
             <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
               <Wand2 className="h-4 w-4 text-primary-500" />
@@ -284,7 +269,7 @@ export const AITutorChat = memo(function AITutorChat() {
               >
                 {MODEL_PROFILES.map((model) => (
                   <option key={model.id} value={model.id}>
-                    {model.name}
+                    {t(model.nameKey)}
                   </option>
                 ))}
               </select>
@@ -309,7 +294,7 @@ export const AITutorChat = memo(function AITutorChat() {
                     : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
                 }`}
               >
-                {model.name}
+                {t(model.nameKey)}
               </button>
             );
           })}
@@ -335,7 +320,9 @@ export const AITutorChat = memo(function AITutorChat() {
                   {!isUser && (
                     <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
                       <MessageSquareText className="h-3.5 w-3.5" />
-                      {MODEL_PROFILES.find((model) => model.id === message.model)?.name ?? selectedModel.name}
+                      {MODEL_PROFILES.find((model) => model.id === message.model)
+                        ? t(MODEL_PROFILES.find((model) => model.id === message.model)!.nameKey)
+                        : t(selectedModel.nameKey)}
                     </div>
                   )}
 
@@ -394,7 +381,7 @@ export const AITutorChat = memo(function AITutorChat() {
                 }
               }}
               rows={1}
-              placeholder={`Ask ${selectedModel.name} about your lesson...`}
+              placeholder={t('ai.askAboutLesson', { model: t(selectedModel.nameKey) })}
               className="max-h-28 min-h-[52px] flex-1 resize-none border-0 bg-transparent px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none dark:text-white"
             />
 
@@ -403,7 +390,7 @@ export const AITutorChat = memo(function AITutorChat() {
               onClick={handleSend}
               disabled={!draft.trim() || isStreaming}
               className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-600 text-white transition-opacity hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Send message"
+              aria-label={t('ai.sendMessage')}
             >
               <SendHorizonal className="h-4 w-4" />
             </button>

@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { GraduationCap, X } from 'lucide-react';
 import { getNavItemsForRole } from '@/config/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { useI18n } from '@/context/I18nContext';
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -10,6 +11,7 @@ interface SidebarProps {
 
 export function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
   const { profile } = useAuth();
+  const { t } = useI18n();
   const navItems = getNavItemsForRole(profile?.role);
 
   return (
@@ -35,13 +37,13 @@ export function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
               <GraduationCap className="h-5 w-5 text-white" />
             </div>
             <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">
-              EduPlatform
+              LearnFlow AI
             </span>
           </div>
           <button
             onClick={onCloseMobile}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 lg:hidden"
-            aria-label="Close sidebar"
+            aria-label={t('nav.closeSidebar')}
           >
             <X className="h-5 w-5" />
           </button>
@@ -73,7 +75,7 @@ export function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
                           : 'text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300'
                       }`}
                     />
-                    {item.label}
+                    {t(`nav.${item.labelKey}`)}
                   </>
                 )}
               </NavLink>
@@ -86,10 +88,14 @@ export function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
           <div className="border-t border-gray-200 px-4 py-3 dark:border-gray-800">
             <div className="rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-800/50">
               <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                Role
+                {t('common.role')}
               </p>
               <p className="mt-0.5 text-sm font-semibold capitalize text-gray-700 dark:text-gray-200">
-                {profile.role}
+                {profile.role === 'student'
+                  ? t('common.studentRole')
+                  : profile.role === 'instructor'
+                    ? t('common.instructorRole')
+                    : t('common.adminRole')}
               </p>
             </div>
           </div>

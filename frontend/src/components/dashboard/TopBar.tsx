@@ -2,7 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Menu, LogOut, User as UserIcon, ChevronDown } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { LanguageToggle } from '@/components/LanguageToggle';
 import { useAuth } from '@/context/AuthContext';
+import { useI18n } from '@/context/I18nContext';
 
 interface TopBarProps {
   onOpenMobile: () => void;
@@ -10,6 +12,7 @@ interface TopBarProps {
 
 export function TopBar({ onOpenMobile }: TopBarProps) {
   const { profile, signOut } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -37,26 +40,26 @@ export function TopBar({ onOpenMobile }: TopBarProps) {
       <button
         onClick={onOpenMobile}
         className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200 lg:hidden"
-        aria-label="Open sidebar"
+        aria-label={t('nav.openSidebar')}
       >
         <Menu className="h-5 w-5" />
       </button>
 
-      {/* Right: theme toggle + profile menu */}
-      <div className="ml-auto flex items-center gap-2">
+      <div className="flex items-center gap-2 ltr:ml-auto rtl:mr-auto">
+        <LanguageToggle />
         <ThemeToggle />
 
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setMenuOpen((o) => !o)}
             className="flex items-center gap-2 rounded-lg p-1.5 pr-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-            aria-label="User menu"
+            aria-label={t('common.userMenu')}
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-600 text-xs font-semibold text-white">
               {initials}
             </div>
             <span className="hidden text-sm font-medium text-gray-700 dark:text-gray-200 sm:block">
-              {profile?.full_name ?? 'User'}
+              {profile?.full_name ?? t('common.user')}
             </span>
             <ChevronDown
               className={`h-4 w-4 text-gray-400 transition-transform ${
@@ -69,10 +72,16 @@ export function TopBar({ onOpenMobile }: TopBarProps) {
             <div className="absolute right-0 mt-2 w-56 origin-top-right rounded-xl border border-gray-200 bg-white py-1.5 shadow-lg shadow-gray-900/5 animate-scale-in dark:border-gray-700 dark:bg-gray-800 dark:shadow-gray-950/30">
               <div className="border-b border-gray-100 px-4 py-2.5 dark:border-gray-700">
                 <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                  {profile?.full_name ?? 'User'}
+                  {profile?.full_name ?? t('common.user')}
                 </p>
                 <p className="mt-0.5 truncate text-xs text-gray-400 dark:text-gray-500">
-                  {profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : ''}
+                  {profile?.role === 'student'
+                    ? t('common.studentRole')
+                    : profile?.role === 'instructor'
+                      ? t('common.instructorRole')
+                      : profile?.role === 'admin'
+                        ? t('common.adminRole')
+                        : ''}
                 </p>
               </div>
 
@@ -84,7 +93,7 @@ export function TopBar({ onOpenMobile }: TopBarProps) {
                 className="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700/50"
               >
                 <UserIcon className="h-4 w-4 text-gray-400" />
-                Profile settings
+                {t('nav.profileSettings')}
               </button>
 
               <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
@@ -97,7 +106,7 @@ export function TopBar({ onOpenMobile }: TopBarProps) {
                 className="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-error-600 transition-colors hover:bg-error-50 dark:text-error-400 dark:hover:bg-error-950/30"
               >
                 <LogOut className="h-4 w-4" />
-                Sign out
+                {t('nav.signOut')}
               </button>
             </div>
           )}

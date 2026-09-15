@@ -16,6 +16,7 @@ import { useAuth } from '@/context/AuthContext';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { isValidEmail, sanitizeEmail, sanitizeText, validateDisplayName, validatePassword } from '@/lib/validation';
 import type { UserRole } from '@/types/database.types';
+import { useTranslation } from '@/context/I18nContext';
 
 type PublicSignupRole = 'student' | 'instructor';
 
@@ -41,6 +42,7 @@ const ROLE_OPTIONS: {
 
 export function SignUpPage() {
   const { signUp, user, loading: authLoading } = useAuth();
+  const { t } = useTranslation();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -59,12 +61,12 @@ export function SignUpPage() {
     const passwordError = validatePassword(password);
 
     if (!sanitizedName) {
-      setError('Please enter a valid full name with at least 2 characters.');
+      setError(t('auth.validName'));
       return;
     }
 
     if (!isValidEmail(sanitizedEmail)) {
-      setError('Please provide a valid email address.');
+      setError(t('auth.validEmail'));
       return;
     }
 
@@ -97,19 +99,18 @@ export function SignUpPage() {
   if (success) {
     return (
       <AuthLayout
-        title="Account created"
-        subtitle="You're all set to start learning"
+        title={t('auth.accountCreated')}
+        subtitle={t('auth.accountCreatedSubtitle')}
       >
         <div className="text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-success-100 dark:bg-success-900/30">
             <ShieldCheck className="h-7 w-7 text-success-600 dark:text-success-400" />
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Your account has been created successfully. You can now sign in with
-            your credentials.
+            {t('auth.accountCreatedMessage')}
           </p>
           <Link to="/auth/sign-in" className="btn-primary mt-6 w-full">
-            Continue to sign in
+            {t('auth.continueSignIn')}
           </Link>
         </div>
       </AuthLayout>
@@ -118,8 +119,8 @@ export function SignUpPage() {
 
   return (
     <AuthLayout
-      title="Create your account"
-      subtitle="Join the platform as a student or instructor"
+      title={t('auth.createAccount')}
+      subtitle={t('auth.signUpSubtitle')}
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         {error && (
@@ -131,7 +132,7 @@ export function SignUpPage() {
 
         {/* Role selection */}
         <div>
-          <span className="label-text">I want to join as</span>
+          <span className="label-text">{t('auth.joinAs')}</span>
           <div className="grid grid-cols-3 gap-2.5">
             {ROLE_OPTIONS.map((option) => {
               const Icon = option.icon;
@@ -161,20 +162,20 @@ export function SignUpPage() {
                         : 'text-gray-600 dark:text-gray-400'
                     }`}
                   >
-                    {option.label}
+                    {option.value === 'student' ? t('auth.student') : t('auth.instructor')}
                   </span>
                 </button>
               )
             })}
           </div>
           <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
-            {ROLE_OPTIONS.find((r) => r.value === selectedRole)?.description}
+            {selectedRole === 'student' ? t('auth.studentDescription') : t('auth.instructorDescription')}
           </p>
         </div>
 
         <div>
           <label htmlFor="fullName" className="label-text">
-            Full name
+            {t('auth.fullName')}
           </label>
           <div className="relative">
             <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -231,7 +232,7 @@ export function SignUpPage() {
               type="button"
               onClick={() => setShowPassword((s) => !s)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />
@@ -246,24 +247,24 @@ export function SignUpPage() {
           {loading ? (
             <span className="flex items-center gap-2">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              Creating account...
+              {t('auth.creatingAccount')}
             </span>
           ) : (
             <span className="flex items-center gap-2">
-              Create account
-              <ArrowRight className="h-4 w-4" />
+              {t('auth.createAccountButton')}
+              <ArrowRight className="directional-icon h-4 w-4" />
             </span>
           )}
         </button>
       </form>
 
       <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
-        Already have an account?{' '}
+        {t('auth.alreadyAccount')}{' '}
         <Link
           to="/auth/sign-in"
           className="font-semibold text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
         >
-          Sign in
+          {t('auth.signIn')}
         </Link>
       </p>
     </AuthLayout>

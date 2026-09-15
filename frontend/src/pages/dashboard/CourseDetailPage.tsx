@@ -912,7 +912,7 @@ export function CourseDetailPage() {
     return (
       <div className="space-y-4">
         <Link to="/courses" className="btn-secondary w-fit">
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="directional-icon h-4 w-4" />
           Back to My Courses
         </Link>
         <div className="card p-6 text-sm text-gray-600 dark:text-gray-300">
@@ -1208,7 +1208,7 @@ export function CourseDetailPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <Link to="/courses" className="inline-flex items-center gap-2 text-sm font-medium text-primary-600 dark:text-primary-300">
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="directional-icon h-4 w-4" />
             Back to My Courses
           </Link>
           <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{course.title}</h1>

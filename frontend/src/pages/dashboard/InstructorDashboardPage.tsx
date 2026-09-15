@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { useTranslation } from '@/context/I18nContext';
 import {
   createCourseForInstructor,
   fetchInstructorCourses,
@@ -310,6 +311,7 @@ const buildDraftFromCourse = (course: Partial<CourseDraft> & { id: string; title
 });
 
 export function InstructorDashboardPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const { session } = useAuth();
@@ -903,10 +905,10 @@ export function InstructorDashboardPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
-            Instructor workspace
+            {t('instructorDashboard.workspace')}
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-            Instructor Dashboard
+            {t('instructorDashboard.title')}
           </h1>
           {courseLoadError && <p className="mt-2 text-sm text-amber-600 dark:text-amber-300">{courseLoadError}</p>}
         </div>
@@ -917,65 +919,65 @@ export function InstructorDashboardPage() {
           className="btn-primary"
         >
           <Plus className="h-4 w-4" />
-          New course
+          {t('instructorDashboard.newCourse')}
         </button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <div className="card p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Courses</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructorDashboard.courses')}</p>
             <BookOpen className="h-5 w-5 text-primary-600" />
           </div>
           <p className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">{courses.length}</p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">total active course tracks</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('instructorDashboard.activeTracks')}</p>
         </div>
 
         <div className="card p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Students</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructorDashboard.students')}</p>
             <Users className="h-5 w-5 text-violet-600" />
           </div>
           <p className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">{stats.totalStudents}</p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">enrolled learners</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('instructorDashboard.enrolledLearners')}</p>
         </div>
 
         <div className="card p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Completion</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructorDashboard.completion')}</p>
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
           </div>
           <p className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">{stats.avgCompletion}%</p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">average course progress</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('instructorDashboard.averageProgress')}</p>
         </div>
 
         <div className="card p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">AI model</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructorDashboard.aiModel')}</p>
             <BrainCircuit className="h-5 w-5 text-cyan-600" />
           </div>
           <p className="mt-4 text-2xl font-bold text-gray-900 dark:text-white">{stats.published}</p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">published with tutor support</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('instructorDashboard.publishedTutor')}</p>
         </div>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.8fr,1fr]">
         <div className="card overflow-hidden">
           <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Course management</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('instructorDashboard.management')}</h2>
           </div>
 
           <div className="overflow-x-auto">
             <table className="min-w-full text-left">
               <thead className="bg-gray-50 text-xs uppercase tracking-[0.12em] text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
                 <tr>
-                  <th className="px-5 py-3">Course</th>
-                  <th className="px-5 py-3">Category</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Students</th>
-                  <th className="px-5 py-3">Completion</th>
-                  <th className="px-5 py-3">Revenue</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
+                  <th className="px-5 py-3">{t('instructorDashboard.course')}</th>
+                  <th className="px-5 py-3">{t('instructorDashboard.category')}</th>
+                  <th className="px-5 py-3">{t('instructorDashboard.status')}</th>
+                  <th className="px-5 py-3">{t('instructorDashboard.students')}</th>
+                  <th className="px-5 py-3">{t('instructorDashboard.completion')}</th>
+                  <th className="px-5 py-3">{t('instructorDashboard.revenue')}</th>
+                  <th className="px-5 py-3 text-right">{t('instructorDashboard.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1024,7 +1026,7 @@ export function InstructorDashboardPage() {
                           className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm transition-colors hover:border-primary-200 hover:text-primary-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-primary-800 dark:hover:text-primary-300"
                         >
                           <PencilLine className="h-3.5 w-3.5" />
-                          Edit
+                          {t('instructorDashboard.edit')}
                         </button>
                         <button
                           type="button"
@@ -1032,7 +1034,7 @@ export function InstructorDashboardPage() {
                           className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-primary-700"
                         >
                           <Eye className="h-3.5 w-3.5" />
-                          View
+                          {t('instructorDashboard.view')}
                         </button>
                       </div>
                     </td>
@@ -1047,18 +1049,18 @@ export function InstructorDashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-                Course health
+                {t('instructorDashboard.health')}
               </p>
-              <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">Performance overview</h2>
+              <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{t('instructorDashboard.performance')}</h2>
             </div>
             <GraduationCap className="h-5 w-5 text-primary-500" />
           </div>
 
           {courses.length === 0 || stats.totalStudents === 0 ? (
             <div className="mt-5 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
-              <p className="font-medium text-gray-700 dark:text-gray-200">No performance data yet</p>
+              <p className="font-medium text-gray-700 dark:text-gray-200">{t('instructorDashboard.noPerformance')}</p>
               <p className="mt-2">
-                Publish courses and enroll learners to generate analytics for this dashboard.
+                {t('instructorDashboard.performanceHint')}
               </p>
             </div>
           ) : (
@@ -1093,13 +1095,13 @@ export function InstructorDashboardPage() {
 
               <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Review queue</p>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{t('instructorDashboard.reviewQueue')}</p>
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                    {stats.review} items
+                    {stats.review} {t('instructorDashboard.reviewItems')}
                   </span>
                 </div>
                 <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-                  Review-ready courses will appear here once you activate and publish them.
+                  {t('instructorDashboard.reviewHint')}
                 </p>
               </div>
             </div>
@@ -1152,7 +1154,7 @@ export function InstructorDashboardPage() {
                     >
                       {step === 1 ? 'Basics' : step === 2 ? 'Modules' : 'Publish'}
                     </span>
-                    {step < 3 && <ChevronRight className="h-4 w-4 text-gray-400" />}
+                    {step < 3 && <ChevronRight className="directional-icon h-4 w-4 text-gray-400" />}
                   </div>
                 ))}
               </div>

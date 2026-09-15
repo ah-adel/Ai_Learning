@@ -208,10 +208,12 @@ def _course_payload_from_row(row: dict[str, Any]) -> dict[str, Any]:
         "title": row["title"],
         "description": row["description"],
         "thumbnail_url": row["thumbnail_url"],
+        "price": float(row.get("price") or 0),
+        "is_featured": bool(row.get("is_featured", False)),
         "is_published": bool(row["is_published"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
-        "status": "published" if row["is_published"] else "draft",
+        "status": row.get("status") or ("published" if row["is_published"] else "draft"),
         "modules": get_course_modules_with_lessons(row["id"]),
     }
 
@@ -438,6 +440,39 @@ def delete_course_record(course_id: str) -> bool:
     return deleted
 
 
+def get_admin_course_inspector(course_id: str) -> dict[str, Any] | None:
+    course = get_course_by_id(course_id)
+    if course is None:
+        return None
+
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS enrollment_count,
+                       COUNT(*) FILTER (WHERE e.completed_at IS NOT NULL) AS completed_count,
+                       COALESCE(SUM(c.price), 0) AS revenue
+                FROM enrollments e
+                INNER JOIN courses c ON c.id = e.course_id
+                WHERE e.course_id = %s
+                """,
+                (course_id,),
+            )
+            stats = cursor.fetchone() or {}
+            cursor.execute("SELECT id, full_name, avatar_url FROM profiles WHERE id = %s", (course["instructor_id"],))
+            instructor = cursor.fetchone()
+
+    return {
+        "course": course,
+        "instructor": dict(instructor) if instructor else None,
+        "stats": {
+            "enrollment_count": int(stats.get("enrollment_count") or 0),
+            "completed_count": int(stats.get("completed_count") or 0),
+            "revenue": float(stats.get("revenue") or 0),
+        },
+    }
+
+
 def _normalize_course_status_and_publish_flag(payload: dict[str, Any]) -> tuple[str, bool]:
     raw_status = str(payload.get("status") or "").strip().lower()
     explicit_publish = payload.get("is_published")
@@ -445,7 +480,7 @@ def _normalize_course_status_and_publish_flag(payload: dict[str, Any]) -> tuple[
     if raw_status in {"published", "approved"}:
         return "published", True
     if raw_status in {"draft", "review", "archived", "rejected"}:
-        return ("draft" if raw_status in {"draft", "archived", "rejected"} else "review"), False
+        return raw_status, False
     if explicit_publish is not None:
         return ("published" if bool(explicit_publish) else "draft"), bool(explicit_publish)
     return "draft", False
@@ -461,18 +496,23 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
     title = str(payload.get("title") or "Untitled course").strip() or "Untitled course"
     description = str(payload.get("description") or "Course created in the platform.").strip() or "Course created in the platform."
     thumbnail_url = payload.get("thumbnail_url") or payload.get("thumbnailUrl")
+    price = float(payload.get("price") or 0)
+    featured = bool(payload.get("is_featured", payload.get("isFeatured", False)))
 
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO courses (id, instructor_id, title, description, thumbnail_url, is_published, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO courses (id, instructor_id, title, description, thumbnail_url, price, status, is_featured, is_published, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO UPDATE SET
                     instructor_id = EXCLUDED.instructor_id,
                     title = EXCLUDED.title,
                     description = EXCLUDED.description,
                     thumbnail_url = EXCLUDED.thumbnail_url,
+                    price = EXCLUDED.price,
+                    status = EXCLUDED.status,
+                    is_featured = EXCLUDED.is_featured,
                     is_published = EXCLUDED.is_published,
                     updated_at = EXCLUDED.updated_at
                 """,
@@ -482,6 +522,9 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
                     title,
                     description,
                     thumbnail_url,
+                    price,
+                    status,
+                    featured,
                     is_published,
                     created_at,
                     updated_at,
@@ -551,6 +594,8 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
         "title": title,
         "description": description,
         "thumbnail_url": thumbnail_url,
+        "price": price,
+        "is_featured": featured,
         "is_published": is_published,
         "created_at": created_at,
         "updated_at": updated_at,
@@ -577,11 +622,12 @@ def get_admin_stats() -> dict[str, int]:
                 """
                 SELECT
                     (SELECT COUNT(*) FROM users) AS total_users,
-                    (SELECT COUNT(*) FROM users WHERE role = 'student') AS total_students,
-                    (SELECT COUNT(*) FROM users WHERE role = 'instructor') AS total_instructors,
+                    (SELECT COUNT(*) FROM users WHERE role = 'student' AND status = 'active') AS total_students,
+                    (SELECT COUNT(*) FROM users WHERE role = 'instructor' AND status = 'active') AS total_instructors,
                     (SELECT COUNT(*) FROM courses) AS total_courses,
                     (SELECT COUNT(*) FROM courses WHERE is_published = TRUE) AS published_courses,
-                    (SELECT COUNT(*) FROM enrollments) AS total_enrollments
+                    (SELECT COUNT(*) FROM enrollments) AS total_enrollments,
+                    (SELECT COALESCE(SUM(0), 0) FROM enrollments) AS total_revenue
                 """
             )
             stats = cursor.fetchone()
@@ -594,6 +640,7 @@ def get_admin_stats() -> dict[str, int]:
             "total_courses": 0,
             "published_courses": 0,
             "total_enrollments": 0,
+            "total_revenue": 0,
         }
 
     return {
@@ -603,7 +650,126 @@ def get_admin_stats() -> dict[str, int]:
         "total_courses": int(stats["total_courses"] or 0),
         "published_courses": int(stats["published_courses"] or 0),
         "total_enrollments": int(stats["total_enrollments"] or 0),
+        "total_revenue": float(stats["total_revenue"] or 0),
     }
+
+
+def get_admin_activity(limit: int = 20) -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT id, 'user' AS event_type, name AS subject, role AS detail, created_at AS occurred_at
+                FROM users
+                UNION ALL
+                SELECT id, 'course' AS event_type, title AS subject,
+                       CASE WHEN is_published THEN 'published' ELSE 'draft' END AS detail,
+                       created_at AS occurred_at
+                FROM courses
+                UNION ALL
+                SELECT id, 'enrollment' AS event_type, course_id AS subject, student_id AS detail, enrolled_at AS occurred_at
+                FROM enrollments
+                ORDER BY occurred_at DESC
+                LIMIT %s
+                """,
+                (max(1, min(limit, 100)),),
+            )
+            rows = cursor.fetchall()
+
+    return [
+        {
+            "id": row["id"],
+            "event_type": row["event_type"],
+            "subject": row["subject"],
+            "detail": row["detail"],
+            "occurred_at": row["occurred_at"],
+        }
+        for row in rows
+    ]
+
+
+def get_admin_students(search: str = "", status_filter: str = "all", sort_by: str = "created_at", descending: bool = True, page: int = 1, page_size: int = 25) -> dict[str, Any]:
+    allowed_sort = {"created_at": "u.created_at", "name": "u.name", "email": "u.email", "status": "u.status"}
+    order_column = allowed_sort.get(sort_by, "u.created_at")
+    offset = max(page - 1, 0) * max(min(page_size, 100), 1)
+    direction = "DESC" if descending else "ASC"
+    pattern = f"%{search.strip()}%"
+    status_clause = "AND u.status = %s" if status_filter in {"active", "inactive", "suspended"} else ""
+    params: list[Any] = [pattern, pattern]
+    if status_clause:
+        params.append(status_filter)
+
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(f"""
+                SELECT u.id, u.name, u.email, u.status, u.created_at,
+                       COUNT(e.id) AS course_count,
+                       COALESCE(ROUND(AVG(CASE WHEN sp.is_completed THEN 100 ELSE 0 END)), 0) AS progress
+                FROM users u
+                LEFT JOIN enrollments e ON e.student_id = u.id
+                LEFT JOIN student_progress sp ON sp.student_id = u.id
+                WHERE u.role = 'student' AND (u.name ILIKE %s OR u.email ILIKE %s) {status_clause}
+                GROUP BY u.id
+                ORDER BY {order_column} {direction}
+                LIMIT %s OFFSET %s
+            """, (*params, max(min(page_size, 100), 1), offset))
+            rows = cursor.fetchall()
+            count_params: list[Any] = [pattern, pattern]
+            if status_clause:
+                count_params.append(status_filter)
+            cursor.execute(f"SELECT COUNT(*) AS total FROM users u WHERE u.role = 'student' AND (u.name ILIKE %s OR u.email ILIKE %s) {status_clause}", tuple(count_params))
+            total = int(cursor.fetchone()["total"])
+
+    return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": page_size}
+
+
+def get_student_inspector(student_id: str) -> dict[str, Any] | None:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute("SELECT id, name, email, status, created_at FROM users WHERE id = %s AND role = 'student'", (student_id,))
+            student = cursor.fetchone()
+            if student is None:
+                return None
+            cursor.execute("SELECT COUNT(*) AS total, COALESCE(ROUND(AVG(CASE WHEN e.completed_at IS NOT NULL THEN 100 ELSE 0 END)), 0) AS progress FROM enrollments e WHERE e.student_id = %s", (student_id,))
+            aggregate = cursor.fetchone()
+            cursor.execute("SELECT e.id, e.course_id, c.title, e.enrolled_at, e.completed_at FROM enrollments e JOIN courses c ON c.id = e.course_id WHERE e.student_id = %s ORDER BY e.enrolled_at DESC", (student_id,))
+            enrollments = [dict(row) for row in cursor.fetchall()]
+    return {"student": dict(student), "total_enrolled_courses": int(aggregate["total"]), "progress": float(aggregate["progress"]), "platform_time_minutes": 0, "completion_certificates": sum(1 for item in enrollments if item["completed_at"]), "enrollments": enrollments, "audit_log": []}
+
+
+def force_student_enrollment(student_id: str, course_id: str) -> bool:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("INSERT INTO enrollments (id, student_id, course_id) VALUES (%s, %s, %s) ON CONFLICT (student_id, course_id) DO NOTHING", (f"{student_id}:{course_id}", student_id, course_id))
+            changed = cursor.rowcount > 0
+        connection.commit()
+    return changed
+
+
+def get_admin_monthly_activity() -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT TO_CHAR(months.month, 'Mon YYYY') AS month,
+                       COUNT(e.id) AS enrollments,
+                       COALESCE(SUM(0), 0) AS revenue
+                FROM generate_series(
+                    DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months',
+                    DATE_TRUNC('month', CURRENT_DATE),
+                    INTERVAL '1 month'
+                ) AS months(month)
+                LEFT JOIN enrollments e ON DATE_TRUNC('month', e.enrolled_at) = months.month
+                GROUP BY months.month
+                ORDER BY months.month ASC
+                """
+            )
+            rows = cursor.fetchall()
+
+    return [
+        {"month": row["month"], "enrollments": int(row["enrollments"] or 0), "revenue": float(row["revenue"] or 0)}
+        for row in rows
+    ]
 
 
 def update_user_role(user_id: str, role: str) -> dict[str, Any] | None:
@@ -637,11 +803,15 @@ def update_user_status(user_id: str, status: str) -> dict[str, Any] | None:
 
 def update_course_status(course_id: str, status: str) -> dict[str, Any] | None:
     normalized = status.strip().lower()
-    publish_flag = True if normalized in {"published", "approved"} else False
+    if normalized == "approved":
+        normalized = "published"
+    if normalized not in {"draft", "published", "review", "archived", "rejected"}:
+        raise ValueError("Unsupported course status.")
+    publish_flag = normalized == "published"
 
     with get_connection() as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE courses SET is_published = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (publish_flag, course_id))
+            cursor.execute("UPDATE courses SET status = %s, is_published = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (normalized, publish_flag, course_id))
             if cursor.rowcount == 0:
                 return None
         connection.commit()
@@ -652,17 +822,29 @@ def update_course_status(course_id: str, status: str) -> dict[str, Any] | None:
             row = cursor.fetchone()
     if row is None:
         return None
-    return {
-        "id": row["id"],
-        "instructor_id": row["instructor_id"],
-        "title": row["title"],
-        "description": row["description"],
-        "thumbnail_url": row["thumbnail_url"],
-        "is_published": bool(row["is_published"]),
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-        "status": "published" if row["is_published"] else "draft",
-    }
+    return _course_payload_from_row(row)
+
+
+def update_course_admin_fields(course_id: str, instructor_id: str | None = None, is_featured: bool | None = None) -> dict[str, Any] | None:
+    updates: list[str] = []
+    values: list[Any] = []
+    if instructor_id is not None:
+        updates.append("instructor_id = %s")
+        values.append(instructor_id)
+    if is_featured is not None:
+        updates.append("is_featured = %s")
+        values.append(is_featured)
+    if not updates:
+        return get_course_by_id(course_id)
+
+    values.append(course_id)
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(f"UPDATE courses SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s", values)
+            if cursor.rowcount == 0:
+                return None
+        connection.commit()
+    return get_course_by_id(course_id)
 
 
 def delete_user_by_id(user_id: str) -> bool:

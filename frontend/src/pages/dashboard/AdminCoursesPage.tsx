@@ -9,6 +9,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { AdminCoursesEnhancements } from '@/components/dashboard/AdminCoursesEnhancements';
+import { useTranslation } from '@/context/I18nContext';
 import {
   deleteCourseRecord,
   readLocalCourses,
@@ -27,6 +29,7 @@ type CourseAdminRow = LocalCourseRecord & {
 export function AdminCoursesPage() {
   const navigate = useNavigate();
   const { profile } = useAuth();
+  const { t, formatNumber } = useTranslation();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -104,7 +107,7 @@ export function AdminCoursesPage() {
 
   const handleDeleteCourse = async (course: LocalCourseRecord) => {
     const confirmed = window.confirm(
-      `Delete "${course.title}"? This removes the course and all related enrollment, lesson, and uploaded media records.`,
+      `${t('common.deleteConfirm')} "${course.title}"`,
     );
 
     if (!confirmed) return;
@@ -126,10 +129,10 @@ export function AdminCoursesPage() {
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-            Course management
+            {t('courses.management')}
           </p>
           <h1 className="mt-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-            Manage Courses
+            {t('courses.title')}
           </h1>
         </div>
 
@@ -138,34 +141,34 @@ export function AdminCoursesPage() {
           onClick={() => navigate('/dashboard/admin')}
           className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
         >
-          Back to overview
+          {t('dashboard.backToOverview')}
         </button>
       </div>
 
       <div className="card p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_220px]">
           <label className="relative block">
-            <span className="sr-only">Search courses</span>
+            <span className="sr-only">{t('courses.search')}</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by title, instructor, or category"
+              placeholder={t('courses.searchPlaceholder')}
               className="input-field pl-10"
             />
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-sm font-medium text-gray-600 dark:text-gray-300">Status</span>
+            <span className="mb-2 block text-sm font-medium text-gray-600 dark:text-gray-300">{t('common.status')}</span>
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value as 'all' | 'published' | 'draft')}
               className="input-field"
             >
-              <option value="all">All courses</option>
-              <option value="published">Published</option>
-              <option value="draft">Draft</option>
+              <option value="all">{t('courses.allCourses')}</option>
+              <option value="published">{t('common.published')}</option>
+              <option value="draft">{t('common.draft')}</option>
             </select>
           </label>
         </div>
@@ -175,10 +178,10 @@ export function AdminCoursesPage() {
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-              Course inventory
+              {t('courses.inventory')}
             </p>
             <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
-              {courseRows.length} course{courseRows.length === 1 ? '' : 's'}
+              {formatNumber(courseRows.length)} {t('courses.course')}
             </h2>
           </div>
           <BookOpen className="h-5 w-5 text-primary-500" />
@@ -188,13 +191,13 @@ export function AdminCoursesPage() {
           <table className="min-w-full text-left">
             <thead className="bg-gray-50 text-xs uppercase tracking-[0.12em] text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
               <tr>
-                <th className="px-5 py-3">Course</th>
-                <th className="px-5 py-3">Instructor</th>
-                <th className="px-5 py-3">Category</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Enrollments</th>
-                <th className="px-5 py-3">Avg. progress</th>
-                <th className="px-5 py-3 text-right">Actions</th>
+                <th className="px-5 py-3">{t('courses.course')}</th>
+                <th className="px-5 py-3">{t('courses.instructor')}</th>
+                <th className="px-5 py-3">{t('courses.category')}</th>
+                <th className="px-5 py-3">{t('common.status')}</th>
+                <th className="px-5 py-3">{t('courses.enrollments')}</th>
+                <th className="px-5 py-3">{t('courses.avgProgress')}</th>
+                <th className="px-5 py-3 text-right">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -203,7 +206,7 @@ export function AdminCoursesPage() {
                   <td className="px-5 py-4">
                     <div>
                       <p className="font-semibold text-gray-900 dark:text-white">{course.title}</p>
-                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{course.aiModel ?? 'General learning'}</p>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{course.aiModel ?? t('courses.generalLearning')}</p>
                     </div>
                   </td>
                   <td className="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{course.instructorName}</td>
@@ -218,7 +221,7 @@ export function AdminCoursesPage() {
                           : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
                       }`}
                     >
-                      {course.status === 'published' || course.isPublished ? 'Published' : 'Draft'}
+                      {course.status === 'published' || course.isPublished ? t('common.published') : t('common.draft')}
                     </button>
                   </td>
                   <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-200">{course.enrollmentCount}</td>
@@ -232,7 +235,7 @@ export function AdminCoursesPage() {
                         aria-label={`Preview ${course.title}`}
                       >
                         <Eye className="h-3.5 w-3.5" />
-                        Preview
+                        {t('courses.preview')}
                       </button>
                       <button
                         type="button"
@@ -241,7 +244,7 @@ export function AdminCoursesPage() {
                         aria-label={`Edit ${course.title}`}
                       >
                         <PencilLine className="h-3.5 w-3.5" />
-                        Edit
+                        {t('courses.edit')}
                       </button>
                       <button
                         type="button"
@@ -250,7 +253,7 @@ export function AdminCoursesPage() {
                         aria-label={`Delete ${course.title}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                        Delete
+                        {t('common.delete')}
                       </button>
                     </div>
                   </td>
@@ -260,6 +263,8 @@ export function AdminCoursesPage() {
           </table>
         </div>
       </div>
+
+      <AdminCoursesEnhancements />
     </div>
   );
 }

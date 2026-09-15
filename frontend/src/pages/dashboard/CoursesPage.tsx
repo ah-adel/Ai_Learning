@@ -5,6 +5,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/context/AuthContext';
+import { useTranslation } from '@/context/I18nContext';
 import { fetchInstructorCourses, fetchStudentEnrolledCourses, unenrollStudentFromCourse } from '@/lib/courseRepository';
 import {
   readLocalEnrollments,
@@ -26,6 +27,7 @@ type CourseRow = {
 export function CoursesPage() {
   const navigate = useNavigate();
   const { session, profile } = useAuth();
+  const { t } = useTranslation();
   const [courses, setCourses] = useState<CourseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -143,13 +145,13 @@ export function CoursesPage() {
   if (!session?.userId) {
     return (
       <div className="card p-6 text-sm text-gray-600 dark:text-gray-300">
-        Sign in to view your learning dashboard.
+      {t('students.signInDashboard')}
       </div>
     );
   }
 
   if (loading) {
-    return <LoadingState label="Loading your courses…" />;
+    return <LoadingState label={t('courses.loadingCourses')} />;
   }
 
   return (
@@ -157,9 +159,9 @@ export function CoursesPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
-            {profile?.role === 'instructor' ? 'Teaching workspace' : 'Student learning'}
+            {profile?.role === 'instructor' ? t('courses.teachingWorkspace') : t('courses.studentLearning')}
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Courses</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t('nav.myCourses')}</h1>
         </div>
 
         <div className="flex w-full max-w-md items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -167,7 +169,7 @@ export function CoursesPage() {
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search courses"
+            placeholder={t('courses.search')}
             className="w-full border-0 bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none dark:text-white"
           />
         </div>
@@ -175,25 +177,25 @@ export function CoursesPage() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard
-          label="Active courses"
+          label={t('students.activeCourses')}
           value={courses.length}
-          hint="in your learning plan"
+          hint={t('courses.inLearningPlan')}
           icon={<BookOpen className="h-5 w-5" />}
           accent="primary"
         />
 
         <StatCard
-          label="Average progress"
+          label={t('students.avgProgress')}
           value={`${averageProgress}%`}
-          hint="across enrolled programs"
+          hint={t('students.allPaths')}
           icon={<Sparkles className="h-5 w-5" />}
           accent="emerald"
         />
 
         <StatCard
-          label="Completed"
+          label={t('students.completed')}
           value={courses.filter((course) => course.progress >= 100).length}
-          hint="courses finished"
+          hint={t('courses.coursesFinished')}
           icon={<CheckCircle2 className="h-5 w-5" />}
           accent="violet"
         />
@@ -207,13 +209,13 @@ export function CoursesPage() {
 
       {filteredCourses.length === 0 ? (
         <EmptyState
-          title="No courses yet"
-          description="You are not enrolled in any active courses right now. Browse the catalog to find your next learning path."
+          title={t('courses.noCourses')}
+          description={t('courses.noCoursesDescription')}
           icon={<BriefcaseBusiness className="h-8 w-8" />}
           action={
             <button type="button" className="btn-primary" onClick={() => navigate('/browse')}>
-              Browse courses
-              <ArrowRight className="h-4 w-4" />
+              {t('students.explore')}
+              <ArrowRight className="directional-icon h-4 w-4" />
             </button>
           }
         />
@@ -227,7 +229,7 @@ export function CoursesPage() {
                     {course.category}
                   </span>
                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    {course.status === 'completed' ? 'Completed' : 'In progress'}
+                    {course.status === 'completed' ? t('common.completed') : t('courses.inProgress')}
                   </span>
                 </div>
                 <h2 className="mt-4 text-xl font-semibold text-gray-900 dark:text-white">{course.title}</h2>
@@ -235,7 +237,7 @@ export function CoursesPage() {
 
               <div className="space-y-5 p-5">
                 <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Instructor</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{t('courses.instructor')}</p>
                   <p className="mt-1 font-medium text-gray-700 dark:text-gray-200">{course.instructorName}</p>
                 </div>
 
@@ -243,7 +245,7 @@ export function CoursesPage() {
 
                 <div>
                   <div className="mb-2 flex items-center justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
-                    <span>Progress</span>
+                    <span>{t('students.progress')}</span>
                     <span>{course.progress}%</span>
                   </div>
                   <div className="h-2.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
@@ -255,8 +257,8 @@ export function CoursesPage() {
                 </div>
 
                 <div className="flex items-center justify-between rounded-xl bg-gray-50 p-3 text-sm text-gray-600 dark:bg-gray-900/60 dark:text-gray-300">
-                  <span>{course.lessonsCount} lessons</span>
-                  <span>{course.progress >= 100 ? 'Ready for review' : 'Keep going'}</span>
+                  <span>{course.lessonsCount} {t('students.lessons')}</span>
+                  <span>{course.progress >= 100 ? t('courses.readyReview') : t('courses.keepGoing')}</span>
                 </div>
 
                 {profile?.role === 'instructor' ? (

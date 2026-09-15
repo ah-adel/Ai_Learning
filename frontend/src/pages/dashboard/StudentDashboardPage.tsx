@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/context/AuthContext';
+import { useTranslation } from '@/context/I18nContext';
 import { fetchStudentEnrolledCourses, unenrollStudentFromCourse } from '@/lib/courseRepository';
 import {
   ensureInstructorRecordsForCourses,
@@ -77,6 +78,7 @@ function getNextLessonId(course: LocalCourseRecord): string | null {
 
 export const StudentDashboardPage = memo(function StudentDashboardPage() {
   const { session } = useAuth();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [enrolledCourses, setEnrolledCourses] = useState<EnrolledCourse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -199,13 +201,13 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
   if (!session?.userId) {
     return (
       <div className="card p-6 text-sm text-gray-600 dark:text-gray-300">
-        Sign in to view your learning dashboard.
+        {t('students.signInDashboard')}
       </div>
     );
   }
 
   if (loading) {
-    return <LoadingState label="Loading your learning plan…" />;
+    return <LoadingState label={t('students.loadingPlan')} />;
   }
 
   return (
@@ -213,10 +215,10 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
-            Student workspace
+            {t('students.workspace')}
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-            Student Dashboard
+            {t('students.dashboard')}
           </h1>
         </div>
 
@@ -231,32 +233,32 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
             position: 'relative',
           }}
         >
-          Explore courses
-          <ArrowRight className="h-4 w-4" />
+          {t('students.explore')}
+          <ArrowRight className="directional-icon h-4 w-4" />
         </button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard
-          label="Enrolled"
+          label={t('students.enrolled')}
           value={enrolledCourses.length}
-          hint="active courses"
+          hint={t('students.activeCourses')}
           icon={<BookOpen className="h-5 w-5" />}
           accent="primary"
         />
 
         <StatCard
-          label="Avg. progress"
+          label={t('students.avgProgress')}
           value={`${totalProgress}%`}
-          hint="across all learning paths"
+          hint={t('students.allPaths')}
           icon={<TrendingUp className="h-5 w-5" />}
           accent="emerald"
         />
 
         <StatCard
-          label="Completed"
+          label={t('students.completed')}
           value={completedCourses}
-          hint="milestones reached"
+          hint={t('students.milestones')}
           icon={<CheckCircle2 className="h-5 w-5" />}
           accent="violet"
         />
@@ -265,27 +267,27 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
       <div className="card p-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Continue learning</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('students.continueLearning')}</h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Pick up where you left off and keep your momentum going.
+              {t('students.continueDescription')}
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
             <Sparkles className="h-3.5 w-3.5" />
-            {enrolledCourses.length} active paths
+            {enrolledCourses.length} {t('students.activePaths')}
           </div>
         </div>
 
         {enrolledCourses.length === 0 ? (
           <div className="mt-6">
             <EmptyState
-              title="No learning paths yet"
-              description="You are not enrolled in any instructor-led courses yet. Browse the catalog to start your next course."
+              title={t('students.noPaths')}
+              description={t('students.noPathsDescription')}
               icon={<BookOpen className="h-8 w-8" />}
               action={
                 <Link to="/browse" className="btn-primary">
-                  Explore courses
-                  <ArrowRight className="h-4 w-4" />
+                  {t('students.explore')}
+                  <ArrowRight className="directional-icon h-4 w-4" />
                 </Link>
               }
             />
@@ -315,12 +317,12 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
 
                   <div className="mt-3 flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
                     <span>{course.instructor}</span>
-                    <span>{course.lessons} lessons</span>
+                    <span>{course.lessons} {t('students.lessons')}</span>
                   </div>
 
                   <div className="mt-4">
                     <div className="mb-2 flex items-center justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
-                      <span>Progress</span>
+                      <span>{t('students.progress')}</span>
                       <span>{course.progress}%</span>
                     </div>
                     <div className="h-2.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
@@ -334,7 +336,7 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
                   <div className="mt-4 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/60">
                     <div className="flex items-center gap-2 text-xs font-medium text-primary-600 dark:text-primary-300">
                       <Clock3 className="h-3.5 w-3.5" />
-                      Next up
+                      {t('students.nextUp')}
                     </div>
                     <p className="mt-2 text-sm text-gray-700 dark:text-gray-200">{course.nextLesson}</p>
                   </div>
@@ -345,14 +347,14 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
                       className="btn-secondary flex-1 justify-center"
                       onClick={() => navigate(`/courses/${course.id}?resume=1&lessonId=${course.nextLessonId ?? ''}`)}
                     >
-                      Resume
+                      {t('students.resume')}
                     </button>
                     <button
                       type="button"
                       className="btn-primary flex-1 justify-center"
                       onClick={() => navigate(`/courses/${course.id}`)}
                     >
-                      View
+                      {t('students.view')}
                     </button>
                   </div>
 
@@ -361,7 +363,7 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
                     className="mt-3 w-full justify-center border border-red-200 bg-white text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:bg-transparent dark:text-red-300 dark:hover:bg-red-950/30"
                     onClick={() => handleUnenroll(course.id)}
                   >
-                    Unenroll
+                    {t('students.unenroll')}
                   </button>
                 </div>
               </article>
@@ -374,7 +376,7 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
         {isTutorOpen && (
           <button
             type="button"
-            aria-label="Close AI tutor"
+            aria-label={t('ai.closeChat')}
             className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-[1px]"
             onClick={() => setIsTutorOpen(false)}
           />
@@ -393,15 +395,15 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary-600 dark:text-primary-300">
-                    AI Tutor
+                    {t('ai.tutor')}
                   </p>
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Learning assistant</p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">{t('ai.assistant')}</p>
                 </div>
               </div>
 
               <button
                 type="button"
-                aria-label="Close AI tutor chat"
+                aria-label={t('ai.closeChat')}
                 onClick={() => setIsTutorOpen(false)}
                 className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
               >
@@ -417,7 +419,7 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
 
         <button
           type="button"
-          aria-label="Open AI tutor"
+          aria-label={t('ai.openTutor')}
           onClick={() => setIsTutorOpen((open) => !open)}
           className="group relative flex items-center gap-3 rounded-full border border-primary-200 bg-primary-600 px-4 py-3 text-left text-white shadow-xl shadow-primary-600/25 transition-all hover:-translate-y-0.5 hover:bg-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-100 dark:border-primary-800 dark:focus:ring-primary-900/50"
         >
@@ -427,9 +429,9 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
 
           <span className="hidden sm:block">
             <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-primary-100">
-              AI Tutor
+              {t('ai.tutor')}
             </span>
-            <span className="block text-sm font-semibold text-white">Assistant</span>
+            <span className="block text-sm font-semibold text-white">{t('ai.assistant')}</span>
           </span>
 
           <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-400 text-[9px] font-bold text-emerald-950 shadow-sm">

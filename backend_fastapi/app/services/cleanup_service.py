@@ -26,6 +26,36 @@ MEDIA_FIELD_KEYS = {
 }
 
 
+def storage_snapshot(upload_root: str | Path) -> dict[str, Any]:
+    root = Path(upload_root).resolve()
+    result: dict[str, Any] = {"videos": {"bytes": 0, "files": 0}, "attachments": {"bytes": 0, "files": 0}}
+    for folder in result:
+        directory = root / folder
+        if not directory.exists():
+            continue
+        for path in directory.rglob("*"):
+            if path.is_file():
+                result[folder]["bytes"] += path.stat().st_size
+                result[folder]["files"] += 1
+    return result
+
+
+def purge_temp_storage(upload_root: str | Path, max_age_hours: int = 24) -> dict[str, Any]:
+    root = Path(upload_root).resolve()
+    cutoff = __import__("time").time() - max_age_hours * 3600
+    deleted: list[str] = []
+    errors: list[dict[str, str]] = []
+    temp_candidates = list(root.rglob("*.tmp")) + list(root.rglob("*.part"))
+    for path in temp_candidates:
+        try:
+            if path.is_file() and path.stat().st_mtime < cutoff:
+                path.unlink()
+                deleted.append(str(path))
+        except OSError as exc:
+            errors.append({"path": str(path), "message": str(exc)})
+    return {"deleted_files": deleted, "errors": errors, "storage": storage_snapshot(root)}
+
+
 def normalize_value(value: Any) -> str | None:
     if not isinstance(value, str):
         return None

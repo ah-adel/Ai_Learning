@@ -10,7 +10,7 @@ import {
 import type { UserRole } from '@/types/database.types';
 
 export interface NavItem {
-  label: string;
+  labelKey: 'dashboard' | 'myCourses' | 'browseCourses' | 'students' | 'courses' | 'instructors' | 'aiModels' | 'settings';
   path: string;
   icon: LucideIcon;
   roles: UserRole[];
@@ -18,49 +18,49 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   {
-    label: 'Dashboard',
+    labelKey: 'dashboard',
     path: '/dashboard',
     icon: LayoutDashboard,
     roles: ['student', 'instructor', 'admin'],
   },
   {
-    label: 'My Courses',
+    labelKey: 'myCourses',
     path: '/courses',
     icon: BookOpen,
     roles: ['student', 'instructor'],
   },
   {
-    label: 'Browse Courses',
+    labelKey: 'browseCourses',
     path: '/browse',
     icon: GraduationCap,
     roles: ['student'],
   },
   {
-    label: 'Students',
+    labelKey: 'students',
     path: '/students',
     icon: Users,
     roles: ['instructor', 'admin'],
   },
   {
-    label: 'Courses',
+    labelKey: 'courses',
     path: '/dashboard/admin/courses',
     icon: BookOpen,
     roles: ['admin'],
   },
   {
-    label: 'Instructors',
+    labelKey: 'instructors',
     path: '/instructors',
     icon: Users,
     roles: ['admin'],
   },
   {
-    label: 'AI Models',
+    labelKey: 'aiModels',
     path: '/ai-models',
     icon: Cpu,
     roles: ['admin'],
   },
   {
-    label: 'Settings',
+    labelKey: 'settings',
     path: '/settings',
     icon: Settings,
     roles: ['student', 'instructor', 'admin'],

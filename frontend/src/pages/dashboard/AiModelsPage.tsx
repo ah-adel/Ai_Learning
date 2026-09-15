@@ -10,6 +10,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { readLocalAiModels, writeLocalAiModels, type LocalAiModelRecord } from '@/lib/localDb';
+import { AdminAiEnhancements } from '@/components/dashboard/AdminAiEnhancements';
+import { useTranslation } from '@/context/I18nContext';
 
 const emptyModel = (): LocalAiModelRecord => ({
   id: crypto.randomUUID(),
@@ -27,6 +29,7 @@ const emptyModel = (): LocalAiModelRecord => ({
 });
 
 export function AiModelsPage() {
+  const { t } = useTranslation();
   const [models, setModels] = useState<LocalAiModelRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +42,7 @@ export function AiModelsPage() {
       setModels(readLocalAiModels());
     } catch (loadError) {
       console.error('Failed to load AI model configs:', loadError);
-      setError('Unable to load AI model settings from the local platform database.');
+      setError(t('ai.loadError'));
     } finally {
       setLoading(false);
     }
@@ -57,11 +60,11 @@ export function AiModelsPage() {
     try {
       setError(null);
       writeLocalAiModels(models);
-      setSaved('AI model settings saved successfully.');
+      setSaved(t('ai.saved'));
     } catch (saveError) {
       console.error('Failed to save AI model configs:', saveError);
       setSaved(null);
-      setError('Failed to persist the AI model configuration locally.');
+      setError(t('ai.saveError'));
     }
   };
 
@@ -74,7 +77,7 @@ export function AiModelsPage() {
       <div className="flex min-h-[30vh] items-center justify-center">
         <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
-          Loading model settings…
+          {t('ai.loading')}
         </div>
       </div>
     );
@@ -85,14 +88,14 @@ export function AiModelsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
-            AI model management
+            {t('dashboard.modelConfiguration')}
           </p>
-          <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">AI Models</h1>
+          <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{t('dashboard.aiModels')}</h1>
         </div>
 
         <button type="button" onClick={addModel} className="btn-secondary">
           <Plus className="h-4 w-4" />
-          Add model
+          {t('ai.addModel')}
         </button>
       </div>
 
@@ -131,14 +134,14 @@ export function AiModelsPage() {
                 }`}
               >
                 <Power className="h-3.5 w-3.5" />
-                {model.isActive ? 'Enabled' : 'Disabled'}
+                {model.isActive ? t('ai.enabled') : t('ai.disabled')}
               </button>
             </div>
 
             <div className="mt-5 space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label className="label-text">Model name</label>
+                  <label className="label-text">{t('ai.modelName')}</label>
                   <input
                     value={model.name}
                     onChange={(event) => updateModel(model.id, 'name', event.target.value)}
@@ -146,7 +149,7 @@ export function AiModelsPage() {
                   />
                 </div>
                 <div>
-                  <label className="label-text">Provider</label>
+                  <label className="label-text">{t('ai.provider')}</label>
                   <input
                     value={model.provider}
                     onChange={(event) => updateModel(model.id, 'provider', event.target.value)}
@@ -156,7 +159,7 @@ export function AiModelsPage() {
               </div>
 
               <div>
-                <label className="label-text">Model ID</label>
+                <label className="label-text">{t('ai.modelId')}</label>
                 <input
                   value={model.modelId}
                   onChange={(event) => updateModel(model.id, 'modelId', event.target.value)}
@@ -166,7 +169,7 @@ export function AiModelsPage() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label className="label-text">API key</label>
+                  <label className="label-text">{t('ai.apiKey')}</label>
                   <div className="relative">
                     <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                     <input
@@ -174,12 +177,12 @@ export function AiModelsPage() {
                       value={model.apiKey}
                       onChange={(event) => updateModel(model.id, 'apiKey', event.target.value)}
                       className="input-field pl-10"
-                      placeholder="Enter API key"
+                      placeholder={t('ai.apiKeyPlaceholder')}
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="label-text">API endpoint</label>
+                  <label className="label-text">{t('ai.apiEndpoint')}</label>
                   <input
                     value={model.apiEndpoint}
                     onChange={(event) => updateModel(model.id, 'apiEndpoint', event.target.value)}
@@ -189,7 +192,7 @@ export function AiModelsPage() {
               </div>
 
               <div>
-                <label className="label-text">System prompt</label>
+                <label className="label-text">{t('ai.systemPrompt')}</label>
                 <textarea
                   rows={4}
                   value={model.systemPrompt}
@@ -203,7 +206,7 @@ export function AiModelsPage() {
                   <div className="mb-2 flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
                     <span className="flex items-center gap-2">
                       <SlidersHorizontal className="h-4 w-4" />
-                      Temperature
+                      {t('ai.temperature')}
                     </span>
                     <span className="font-medium text-gray-900 dark:text-white">{model.temperature.toFixed(1)}</span>
                   </div>
@@ -219,7 +222,7 @@ export function AiModelsPage() {
                 </div>
 
                 <div>
-                  <label className="label-text">Max tokens</label>
+                  <label className="label-text">{t('ai.maxTokens')}</label>
                   <input
                     type="number"
                     min={100}
@@ -239,9 +242,11 @@ export function AiModelsPage() {
       <div className="flex justify-end">
         <button type="button" onClick={saveModels} className="btn-primary">
           <ServerCog className="h-4 w-4" />
-          Save model settings
+          {t('common.saveChanges')}
         </button>
       </div>
+
+      <AdminAiEnhancements />
     </div>
   );
 }

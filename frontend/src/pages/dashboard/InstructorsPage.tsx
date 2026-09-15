@@ -21,6 +21,8 @@ import {
   type LocalInstructorPermission,
   type LocalUserRecord,
 } from '@/lib/localDb';
+import { AdminInstructorsEnhancements } from '@/components/dashboard/AdminInstructorsEnhancements';
+import { useTranslation } from '@/context/I18nContext';
 
 type InstructorStatus = 'active' | 'inactive' | 'suspended';
 
@@ -98,6 +100,7 @@ function mapInstructorRow(user: LocalUserRecord, allCourses: LocalCourseRecord[]
 }
 
 export function InstructorsPage() {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<InstructorRow[]>([]);
   const [availableCourses, setAvailableCourses] = useState<LocalCourseRecord[]>([]);
   const [search, setSearch] = useState('');
@@ -296,7 +299,7 @@ export function InstructorsPage() {
     if (!row) return;
 
     const confirmed = window.confirm(
-      `Delete ${row.name}? This will remove the instructor profile and associated access records from the local database.`
+      `${t('common.deleteConfirm')} ${row.name}`
     );
 
     if (!confirmed) return;
@@ -331,60 +334,60 @@ export function InstructorsPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
-            Instruction staff
+            {t('instructors.staff')}
           </p>
-          <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">Instructors</h1>
+          <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{t('instructors.title')}</h1>
         </div>
 
         <button type="button" className="btn-primary" onClick={openCreateModal}>
           <Plus className="h-4 w-4" />
-          Add instructor
+          {t('instructors.add')}
         </button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <div className="card p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Total instructors</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructors.total')}</p>
             <Users className="h-5 w-5 text-primary-600" />
           </div>
           <p className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">{rows.length}</p>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            active mentors on the platform
+            {t('instructors.activeMentors')}
           </p>
         </div>
 
         <div className="card p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Active</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructors.active')}</p>
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
           </div>
           <p className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">
             {rows.filter((row) => row.status === 'active').length}
           </p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">ready to teach</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('instructors.readyToTeach')}</p>
         </div>
 
         <div className="card p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Assignments</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructors.assignments')}</p>
             <BookOpen className="h-5 w-5 text-violet-600" />
           </div>
           <p className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">
             {rows.reduce((sum, row) => sum + row.courseIds.length, 0)}
           </p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">courses assigned</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('instructors.coursesAssigned')}</p>
         </div>
 
         <div className="card p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Permissions</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructors.permissions')}</p>
             <ShieldCheck className="h-5 w-5 text-cyan-600" />
           </div>
           <p className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">
             {rows.filter((row) => row.permissions.manageCourses).length}
           </p>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">course managers</p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('instructors.courseManagers')}</p>
         </div>
       </div>
 
@@ -399,7 +402,7 @@ export function InstructorsPage() {
         <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Instructor directory
+              {t('instructors.directory')}
             </h2>
             <div className="flex flex-col gap-3 sm:flex-row">
               <div className="relative">
@@ -408,7 +411,7 @@ export function InstructorsPage() {
                   type="search"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search by name or email"
+                  placeholder={t('instructors.search')}
                   className="input-field w-full pl-10 sm:w-64"
                 />
               </div>
@@ -420,10 +423,10 @@ export function InstructorsPage() {
                 }
                 className="input-field sm:w-40"
               >
-                <option value="all">All statuses</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="suspended">Suspended</option>
+                <option value="all">{t('instructors.allStatuses')}</option>
+                <option value="active">{t('common.active')}</option>
+                <option value="inactive">{t('common.inactive')}</option>
+                <option value="suspended">{t('common.suspended')}</option>
               </select>
 
               <select
@@ -431,7 +434,7 @@ export function InstructorsPage() {
                 onChange={(event) => setSpecialtyFilter(event.target.value)}
                 className="input-field sm:w-48"
               >
-                <option value="all">All specialties</option>
+                <option value="all">{t('instructors.allSpecialties')}</option>
                 {specialties.map((specialty) => (
                   <option key={specialty} value={specialty}>
                     {specialty}
@@ -446,12 +449,12 @@ export function InstructorsPage() {
           <table className="min-w-full text-left">
             <thead className="bg-gray-50 text-xs uppercase tracking-[0.12em] text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
               <tr>
-                <th className="px-5 py-3">Instructor</th>
-                <th className="px-5 py-3">Specialty</th>
-                <th className="px-5 py-3">Courses</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Joined</th>
-                <th className="px-5 py-3 text-right">Actions</th>
+                <th className="px-5 py-3">{t('instructors.title')}</th>
+                <th className="px-5 py-3">{t('instructors.specialty')}</th>
+                <th className="px-5 py-3">{t('students.courses')}</th>
+                <th className="px-5 py-3">{t('common.status')}</th>
+                <th className="px-5 py-3">{t('instructors.joined')}</th>
+                <th className="px-5 py-3 text-right">{t('instructors.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -461,7 +464,7 @@ export function InstructorsPage() {
                     colSpan={6}
                     className="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400"
                   >
-                    No instructors match the current filters.
+                    {t('instructors.empty')}
                   </td>
                 </tr>
               ) : (
@@ -496,7 +499,11 @@ export function InstructorsPage() {
                           statusStyles[row.status]
                         }`}
                       >
-                        {row.status}
+                        {row.status === 'active'
+                          ? t('common.active')
+                          : row.status === 'inactive'
+                            ? t('common.inactive')
+                            : t('common.suspended')}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
@@ -804,6 +811,8 @@ export function InstructorsPage() {
           </div>
         </div>
       )}
+
+      <AdminInstructorsEnhancements />
     </div>
   );
 }
