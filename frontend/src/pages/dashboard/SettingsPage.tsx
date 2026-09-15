@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, Bell, CheckCircle2, MoonStar, Save, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -36,7 +36,9 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
-  const admins = useMemo(() => readLocalUsers().filter((entry) => entry.role === 'admin'), []);
+  const [admins, setAdmins] = useState<LocalUserRecord[]>(() =>
+    readLocalUsers().filter((entry) => entry.role === 'admin'),
+  );
 
   useEffect(() => {
     try {
@@ -48,6 +50,7 @@ export function SettingsPage() {
       const currentUser = session ? localUsers.find((entry) => entry.id === session.userId) : null;
 
       setSettings(nextSettings);
+      setAdmins(localUsers.filter((entry) => entry.role === 'admin'));
       setProfileForm({
         fullName: currentUser?.profile.full_name ?? user?.email ?? nextSettings.adminName,
         email: currentUser?.email ?? user?.email ?? nextSettings.adminEmail,
@@ -129,7 +132,7 @@ export function SettingsPage() {
   const handleCreateAdmin = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!isAdmin) {
+    if (!isOwnerSession) {
       setError('Only the master admin can create secondary administrators.');
       return;
     }
@@ -190,6 +193,7 @@ export function SettingsPage() {
     ];
 
     writeLocalUsers(nextUsers);
+    setAdmins(nextUsers.filter((entry) => entry.role === 'admin'));
     setAdminForm({ name: '', email: '', password: '' });
     setSaved('Secondary admin account created successfully.');
     setError(null);
@@ -215,6 +219,7 @@ export function SettingsPage() {
 
     try {
       const nextUsers = deleteLocalUserById(adminId, currentUserEmail);
+      setAdmins(nextUsers.filter((entry) => entry.role === 'admin'));
       const targetWasMaster = isMasterAdminEmail(adminEmail);
       setSaved(targetWasMaster ? 'Master admin account removed from the local store.' : 'Secondary admin removed.');
       setError(null);
@@ -511,7 +516,7 @@ export function SettingsPage() {
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Master Admin / Owner</p>
                 <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-900/50 dark:bg-emerald-950/20">
                   <div>
-                    <p className="font-semibold text-gray-900 dark:text-white">{readLocalUsers().find((entry) => isMasterAdminEmail(entry.email))?.name ?? 'Platform Admin'}</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">{admins.find((entry) => isMasterAdminEmail(entry.email))?.name ?? 'Platform Admin'}</p>
                     <p className="text-sm text-gray-600 dark:text-gray-300">{getMasterAdminEmail()}</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -522,7 +527,7 @@ export function SettingsPage() {
                       <button
                         type="button"
                         className="btn-secondary border-red-200 px-2.5 py-2 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/30"
-                        onClick={() => handleDeleteAdmin(readLocalUsers().find((entry) => isMasterAdminEmail(entry.email))?.id ?? '', getMasterAdminEmail())}
+                        onClick={() => handleDeleteAdmin(admins.find((entry) => isMasterAdminEmail(entry.email))?.id ?? '', getMasterAdminEmail())}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -533,13 +538,13 @@ export function SettingsPage() {
 
               <div className="space-y-2">
                 <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Secondary administrators</p>
-                {readLocalUsers().filter((entry) => entry.role === 'admin' && !isMasterAdminEmail(entry.email)).length === 0 ? (
+                {admins.filter((entry) => !isMasterAdminEmail(entry.email)).length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
                     No secondary admins yet.
                   </div>
                 ) : (
-                  readLocalUsers()
-                    .filter((entry) => entry.role === 'admin' && !isMasterAdminEmail(entry.email))
+                  admins
+                    .filter((entry) => !isMasterAdminEmail(entry.email))
                     .map((admin) => (
                       <div key={admin.id} className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/60">
                         <div>
