@@ -1,3 +1,5 @@
+import { localizedRuntimeError } from '@/lib/errorMessages';
+
 export type AiProvider = 'OpenAI' | 'Gemini' | 'Ollama' | 'HuggingFace' | 'Custom';
 
 export type AdminAiModel = {
@@ -37,7 +39,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = typeof payload.detail === 'object' ? payload.detail?.error : payload.detail;
-    throw new Error(payload.error ?? detail ?? 'AI administration request failed.');
+    throw new Error(localizedRuntimeError(new Error(payload.error ?? detail ?? 'AI administration request failed.')));
   }
   return (payload.data ?? payload) as T;
 }

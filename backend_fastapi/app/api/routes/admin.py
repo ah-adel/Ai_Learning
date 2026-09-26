@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import os
 import platform
-import resource
 import time
 from typing import Any, Literal
+
+try:
+    import resource
+except ModuleNotFoundError:  # pragma: no cover - Windows / non-Unix environments
+    resource = None
 
 from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -133,13 +137,17 @@ async def admin_analytics(authorization: str | None = Header(default=None, alias
 @router.get("/admin/system", response_model=ApiSuccessResponse[dict[str, Any]])
 async def admin_system(authorization: str | None = Header(default=None, alias="Authorization")) -> ApiSuccessResponse[dict[str, Any]]:
     _require_admin(authorization)
-    usage = resource.getrusage(resource.RUSAGE_SELF)
+    memory_mb = 0.0
+    if resource is not None:
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        memory_mb = round(usage.ru_maxrss / (1024 * 1024), 2)
+
     return ApiSuccessResponse(data={
         "maintenance_mode": _maintenance_mode,
         "python_version": platform.python_version(),
         "platform": platform.system(),
         "process_id": os.getpid(),
-        "memory_mb": round(usage.ru_maxrss / (1024 * 1024), 2),
+        "memory_mb": memory_mb,
         "uptime_seconds": round(time.time() - _started_at),
     }, message="System status retrieved successfully.")
 

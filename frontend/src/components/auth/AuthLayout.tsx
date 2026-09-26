@@ -20,7 +20,7 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
               <GraduationCap className="h-6 w-6 text-white" />
             </div>
             <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">
-              LearnFlow AI
+              Fasl_ai
             </span>
           </div>
           <div className="flex items-center gap-2">

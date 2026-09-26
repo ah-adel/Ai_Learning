@@ -14,13 +14,18 @@ import {
   writeLocalSession,
   writeLocalUsers,
 } from '@/lib/localDb';
+import { localizedRuntimeError } from '@/lib/errorMessages';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
 async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = window.sessionStorage.getItem('learnflow_session_token');
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+  let timedOut = false;
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 10000);
   let response: Response;
 
   try {
@@ -34,13 +39,15 @@ async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T
         ...(options.headers ?? {}),
       },
     });
+  } catch (error) {
+    throw new Error(localizedRuntimeError(timedOut ? new Error('Request timed out') : error));
   } finally {
     window.clearTimeout(timeoutId);
   }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.error ?? payload?.detail ?? 'Authentication request failed.');
+    throw new Error(localizedRuntimeError(payload?.error ?? payload?.detail, 'Authentication request failed.'));
   }
 
   return (payload?.data ?? payload) as T;
@@ -105,6 +112,7 @@ interface AuthContextValue {
   ) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateAccount: (fullName: string, email: string, bio: string) => Promise<{ error: string | null }>;
   fetchUsers: () => Promise<UserListRow[]>;
   fetchAdminStats: () => Promise<AdminStats>;
   fetchAdminCourses: () => Promise<AdminCourseRow[]>;
@@ -190,7 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const user = authResponse?.user;
       if (!user) {
-        return { error: 'Invalid email or password.' };
+        return { error: localizedRuntimeError(new Error('Invalid email or password.')) };
       }
 
       const nextSession = { userId: user.id, email: user.email };
@@ -201,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     } catch (error) {
       console.error('Failed to sign in with backend:', error);
-      return { error: error instanceof Error ? error.message : 'Unable to sign in.' };
+      return { error: localizedRuntimeError(error, 'Unable to sign in.') };
     }
   }
 
@@ -227,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const user = authResponse?.user;
       if (!user) {
-        return { error: 'Unable to create the account.' };
+        return { error: localizedRuntimeError(new Error('Unable to create the account.')) };
       }
 
       const nextSession = { userId: user.id, email: user.email };
@@ -238,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: null };
     } catch (error) {
       console.error('Failed to sign up with backend:', error);
-      return { error: error instanceof Error ? error.message : 'Unable to create the account.' };
+      return { error: localizedRuntimeError(error, 'Unable to create the account.') };
     }
   }
 
@@ -273,6 +281,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function refreshProfile() {
     if (!session?.userId) return;
     await loadProfile(session.userId);
+  }
+
+  async function updateAccount(fullName: string, email: string, bio: string) {
+    if (!session?.userId) return { error: 'You must be signed in to update your profile.' };
+
+    try {
+      const response = await apiRequest<{ user: { id: string; email: string; role: UserRole }; profile: Profile }>(`/api/auth/profile?user_id=${encodeURIComponent(session.userId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ full_name: fullName, email, bio }),
+      });
+      const nextSession = { ...session, email: response.user.email };
+      writeLocalSession(nextSession);
+      setSession(nextSession);
+      setProfile(response.profile);
+      return { error: null };
+    } catch (error) {
+      return { error: localizedRuntimeError(error, 'Unable to update your profile.') };
+    }
   }
 
   async function fetchUsers(): Promise<UserListRow[]> {
@@ -314,6 +340,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp,
       signOut,
       refreshProfile,
+      updateAccount,
       fetchUsers,
       fetchAdminStats,
       fetchAdminCourses,

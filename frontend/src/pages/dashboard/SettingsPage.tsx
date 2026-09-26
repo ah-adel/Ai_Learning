@@ -17,14 +17,14 @@ import { AdminSettingsEnhancements } from '@/components/dashboard/AdminSettingsE
 import { useTranslation } from '@/context/I18nContext';
 
 export function SettingsPage() {
-  const { session, user, profile } = useAuth();
+  const { session, user, profile, updateAccount } = useAuth();
   const { t } = useTranslation();
   const currentUserEmail = (session?.email ?? user?.email ?? '').trim().toLowerCase();
   const isOwnerSession = currentUserEmail === getMasterAdminEmail().toLowerCase();
   const [settings, setSettings] = useState<LocalPlatformSettings>(readLocalSettings());
   const isAdmin = profile?.role === 'admin';
   const [profileForm, setProfileForm] = useState({
-    fullName: user?.email ?? 'Platform Admin',
+    fullName: profile?.full_name ?? 'Platform Admin',
     email: user?.email ?? 'admin@learnflow.io',
     bio: 'Platform administrator and system owner.',
   });
@@ -52,7 +52,7 @@ export function SettingsPage() {
       setSettings(nextSettings);
       setAdmins(localUsers.filter((entry) => entry.role === 'admin'));
       setProfileForm({
-        fullName: currentUser?.profile.full_name ?? user?.email ?? nextSettings.adminName,
+        fullName: currentUser?.profile.full_name ?? profile?.full_name ?? nextSettings.adminName,
         email: currentUser?.email ?? user?.email ?? nextSettings.adminEmail,
         bio: currentUser?.profile.bio ?? 'Platform administrator and system owner.',
       });
@@ -68,7 +68,7 @@ export function SettingsPage() {
     setSettings((current) => ({ ...current, [key]: value }));
   };
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
     try {
       setError(null);
 
@@ -103,6 +103,11 @@ export function SettingsPage() {
       });
 
       if (session && user) {
+        const accountUpdate = await updateAccount(nextFullName, nextEmail, nextBio);
+        if (accountUpdate.error) {
+          setError(accountUpdate.error);
+          return;
+        }
         const users = readLocalUsers();
         const nextUsers = users.map((entry) =>
           entry.id === session.userId

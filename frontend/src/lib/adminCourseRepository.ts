@@ -1,4 +1,5 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+import { localizedRuntimeError } from '@/lib/errorMessages';
 
 export type AdminCourseStatus = 'draft' | 'published' | 'review' | 'archived' | 'rejected';
 
@@ -35,7 +36,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = typeof payload.detail === 'object' ? payload.detail?.error : payload.detail;
-    throw new Error(payload.error ?? detail ?? 'Admin course request failed.');
+    throw new Error(localizedRuntimeError(new Error(payload.error ?? detail ?? 'Admin course request failed.')));
   }
   return (payload.data ?? payload) as T;
 }

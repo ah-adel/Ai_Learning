@@ -16,6 +16,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { StatCard } from '@/components/ui/StatCard';
 import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/context/I18nContext';
+import { useScrollLock } from '@/hooks/useScrollLock';
 import { fetchStudentEnrolledCourses, unenrollStudentFromCourse } from '@/lib/courseRepository';
 import {
   ensureInstructorRecordsForCourses,
@@ -83,6 +84,8 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
   const [enrolledCourses, setEnrolledCourses] = useState<EnrolledCourse[]>([]);
   const [loading, setLoading] = useState(true);
   const [isTutorOpen, setIsTutorOpen] = useState(false);
+
+  useScrollLock(isTutorOpen);
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
@@ -372,13 +375,14 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
         )}
       </div>
 
-      <div className="fixed bottom-6 right-6 z-50 flex items-end justify-end gap-3" style={{ pointerEvents: 'none' }}>
+      <div className="fixed bottom-6 end-6 z-50 flex items-end justify-end gap-3" style={{ pointerEvents: 'none' }}>
         {isTutorOpen && (
           <button
             type="button"
             aria-label={t('ai.closeChat')}
             className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-[1px]"
             onClick={() => setIsTutorOpen(false)}
+            style={{ overscrollBehavior: 'contain' }}
           />
         )}
 
@@ -386,8 +390,9 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
           className={`z-50 transition-all duration-300 ease-out ${
             isTutorOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none translate-x-[120%] opacity-0'
           }`}
+          style={{ overscrollBehavior: 'contain' }}
         >
-          <div className="w-[min(92vw,420px)] overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5 dark:border-gray-800 dark:bg-gray-950">
+          <div className="w-[min(92vw,420px)] max-h-[82vh] overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5 dark:border-gray-800 dark:bg-gray-950">
             <div className="flex items-center justify-between border-b border-gray-200 bg-gradient-to-r from-primary-50 via-white to-violet-50 px-4 py-3 dark:border-gray-800 dark:from-primary-950/20 dark:via-gray-950 dark:to-violet-950/20">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white shadow-lg shadow-primary-600/20">
@@ -411,7 +416,7 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
               </button>
             </div>
 
-            <div className="max-h-[75vh] overflow-hidden">
+            <div className="max-h-[75vh] overflow-y-auto overscroll-contain">
               <AITutorChat />
             </div>
           </div>
@@ -421,7 +426,7 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
           type="button"
           aria-label={t('ai.openTutor')}
           onClick={() => setIsTutorOpen((open) => !open)}
-          className="group relative flex items-center gap-3 rounded-full border border-primary-200 bg-primary-600 px-4 py-3 text-left text-white shadow-xl shadow-primary-600/25 transition-all hover:-translate-y-0.5 hover:bg-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-100 dark:border-primary-800 dark:focus:ring-primary-900/50"
+          className="group relative flex items-center gap-3 rounded-full border border-primary-200 bg-primary-600 px-4 py-3 text-start text-white shadow-xl shadow-primary-600/25 transition-all hover:-translate-y-0.5 hover:bg-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-100 dark:border-primary-800 dark:focus:ring-primary-900/50"
         >
           <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10">
             <Bot className="h-5 w-5" />
@@ -434,7 +439,7 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
             <span className="block text-sm font-semibold text-white">{t('ai.assistant')}</span>
           </span>
 
-          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-400 text-[9px] font-bold text-emerald-950 shadow-sm">
+          <span className="absolute -end-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-400 text-[9px] font-bold text-emerald-950 shadow-sm">
             •
           </span>
         </button>

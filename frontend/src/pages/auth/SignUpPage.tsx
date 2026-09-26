@@ -17,6 +17,7 @@ import { AuthLayout } from '@/components/auth/AuthLayout';
 import { isValidEmail, sanitizeEmail, sanitizeText, validateDisplayName, validatePassword } from '@/lib/validation';
 import type { UserRole } from '@/types/database.types';
 import { useTranslation } from '@/context/I18nContext';
+import { localizedRuntimeError } from '@/lib/errorMessages';
 
 type PublicSignupRole = 'student' | 'instructor';
 
@@ -71,7 +72,7 @@ export function SignUpPage() {
     }
 
     if (passwordError) {
-      setError(passwordError);
+      setError(localizedRuntimeError(new Error(passwordError), passwordError));
       return;
     }
 
@@ -85,7 +86,7 @@ export function SignUpPage() {
     );
 
     if (signUpError) {
-      setError(signUpError);
+      setError(localizedRuntimeError(new Error(signUpError), signUpError));
       setLoading(false);
       return;
     }
@@ -178,15 +179,15 @@ export function SignUpPage() {
             {t('auth.fullName')}
           </label>
           <div className="relative">
-            <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <User className="pointer-events-none absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               id="fullName"
               type="text"
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="Jane Doe"
-              className="input-field pl-10"
+              placeholder={t('auth.namePlaceholder')}
+              className="input-field ps-10"
               autoComplete="name"
               autoFocus
             />
@@ -195,18 +196,18 @@ export function SignUpPage() {
 
         <div>
           <label htmlFor="email" className="label-text">
-            Email address
+            {t('auth.email')}
           </label>
           <div className="relative">
-            <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Mail className="pointer-events-none absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               id="email"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="input-field pl-10"
+              placeholder={t('auth.emailPlaceholder')}
+              className="input-field ps-10"
               autoComplete="email"
             />
           </div>
@@ -214,24 +215,24 @@ export function SignUpPage() {
 
         <div>
           <label htmlFor="password" className="label-text">
-            Password
+            {t('auth.password')}
           </label>
           <div className="relative">
-            <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Lock className="pointer-events-none absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               id="password"
               type={showPassword ? 'text' : 'password'}
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 6 characters"
-              className="input-field pl-10 pr-10"
+              placeholder={t('auth.passwordMinPlaceholder')}
+              className="input-field ps-10 pe-10"
               autoComplete="new-password"
             />
             <button
               type="button"
               onClick={() => setShowPassword((s) => !s)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300"
+              className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300"
               aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
             >
               {showPassword ? (

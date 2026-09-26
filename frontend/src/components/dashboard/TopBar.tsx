@@ -12,7 +12,7 @@ interface TopBarProps {
 
 export function TopBar({ onOpenMobile }: TopBarProps) {
   const { profile, signOut } = useAuth();
-  const { t } = useI18n();
+  const { t, direction } = useI18n();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -45,14 +45,14 @@ export function TopBar({ onOpenMobile }: TopBarProps) {
         <Menu className="h-5 w-5" />
       </button>
 
-      <div className="flex items-center gap-2 ltr:ml-auto rtl:mr-auto">
+      <div className="ms-auto flex items-center gap-2">
         <LanguageToggle />
         <ThemeToggle />
 
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setMenuOpen((o) => !o)}
-            className="flex items-center gap-2 rounded-lg p-1.5 pr-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+            className="flex items-center gap-2 rounded-lg p-1.5 pe-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
             aria-label={t('common.userMenu')}
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-600 text-xs font-semibold text-white">
@@ -63,13 +63,13 @@ export function TopBar({ onOpenMobile }: TopBarProps) {
             </span>
             <ChevronDown
               className={`h-4 w-4 text-gray-400 transition-transform ${
-                menuOpen ? 'rotate-180' : ''
+                menuOpen ? (direction === 'rtl' ? 'rotate-180' : 'rotate-180') : ''
               }`}
             />
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 mt-2 w-56 origin-top-right rounded-xl border border-gray-200 bg-white py-1.5 shadow-lg shadow-gray-900/5 animate-scale-in dark:border-gray-700 dark:bg-gray-800 dark:shadow-gray-950/30">
+            <div className="absolute end-0 mt-2 w-56 max-h-[70vh] origin-top-right overflow-y-auto rounded-xl border border-gray-200 bg-white py-1.5 shadow-lg shadow-gray-900/5 animate-scale-in overscroll-contain dark:border-gray-700 dark:bg-gray-800 dark:shadow-gray-950/30">
               <div className="border-b border-gray-100 px-4 py-2.5 dark:border-gray-700">
                 <p className="text-sm font-semibold text-gray-900 dark:text-white">
                   {profile?.full_name ?? t('common.user')}

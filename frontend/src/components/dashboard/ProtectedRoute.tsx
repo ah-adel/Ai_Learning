@@ -2,6 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { getDashboardPathForRole } from '@/config/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { localizedRuntimeError } from '@/lib/errorMessages';
 import type { UserRole } from '@/types/database.types';
 
 interface ProtectedRouteProps {
@@ -36,7 +37,7 @@ export function ProtectedRoute({ allowedRoles, children }: ProtectedRouteProps) 
   if (!allowedRoles.includes(profile.role)) {
     const fallback = getDashboardPathForRole(profile.role);
     if (typeof window !== 'undefined') {
-      window.alert(`Access denied for ${profile.role}. Redirecting to your authorized dashboard.`);
+      window.alert(localizedRuntimeError(new Error('Access denied.')));
     }
     return <Navigate to={fallback} state={{ from: location }} replace />;
   }

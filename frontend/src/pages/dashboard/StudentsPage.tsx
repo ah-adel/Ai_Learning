@@ -222,12 +222,12 @@ export function StudentsPage() {
 
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={t('students.search')}
-              className="input-field w-full pl-10 sm:w-64"
+              className="input-field w-full ps-10 sm:w-64"
             />
           </div>
 
@@ -265,7 +265,7 @@ export function StudentsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left">
+            <table className="min-w-full text-start">
               <thead className="bg-gray-50 text-xs uppercase tracking-[0.12em] text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
                 <tr>
                   <th className="px-5 py-3">{t('students.student')}</th>

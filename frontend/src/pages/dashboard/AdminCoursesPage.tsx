@@ -149,13 +149,13 @@ export function AdminCoursesPage() {
         <div className="grid gap-3 md:grid-cols-[1fr_220px]">
           <label className="relative block">
             <span className="sr-only">{t('courses.search')}</span>
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={t('courses.searchPlaceholder')}
-              className="input-field pl-10"
+              className="input-field ps-10"
             />
           </label>
 
@@ -188,7 +188,7 @@ export function AdminCoursesPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full text-left">
+          <table className="min-w-full text-start">
             <thead className="bg-gray-50 text-xs uppercase tracking-[0.12em] text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
               <tr>
                 <th className="px-5 py-3">{t('courses.course')}</th>
@@ -197,7 +197,7 @@ export function AdminCoursesPage() {
                 <th className="px-5 py-3">{t('common.status')}</th>
                 <th className="px-5 py-3">{t('courses.enrollments')}</th>
                 <th className="px-5 py-3">{t('courses.avgProgress')}</th>
-                <th className="px-5 py-3 text-right">{t('common.actions')}</th>
+                <th className="px-5 py-3 text-end">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>

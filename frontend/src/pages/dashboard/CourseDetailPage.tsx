@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { useI18n } from '@/context/I18nContext';
 import { VideoPlayer } from '@/components/dashboard/VideoPlayer';
 import {
   deleteCourseRecord,
@@ -37,6 +38,8 @@ import { fetchCourseById } from '@/lib/courseRepository';
 
 type CourseLesson = CourseLessonRecord;
 type CourseModule = CourseModuleRecord;
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
 const courseCategorySuggestions = [
   'Design',
@@ -302,6 +305,7 @@ export function CourseDetailPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { session, profile } = useAuth();
+  const { language, t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [course, setCourse] = useState<LocalCourseRecord | null>(null);
@@ -312,6 +316,7 @@ export function CourseDetailPage() {
   const [resumeLessonId, setResumeLessonId] = useState<string | null>(null);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'resources'>('overview');
+  const [reviewDraft, setReviewDraft] = useState({ rating: 5, comment: '' });
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
   const [uploadStatusByKey, setUploadStatusByKey] = useState<
     Record<string, { progress: number; isUploading: boolean; error: string | null; loadedBytes: number; totalBytes: number; abortController?: AbortController }>
@@ -430,6 +435,19 @@ export function CourseDetailPage() {
     if (!allLessons.length) return 0;
     return Math.round((completedLessonIds.length / allLessons.length) * 100);
   }, [allLessons.length, completedLessonIds.length]);
+  const courseAverageRating = useMemo(
+    () => Number(course?.averageRating ?? 0),
+    [course?.averageRating],
+  );
+  const courseReviewCount = useMemo(
+    () => Number(course?.reviewCount ?? course?.reviews?.length ?? 0),
+    [course?.reviewCount, course?.reviews],
+  );
+  const enrolledStudentCount = useMemo(
+    () => Number(course?.enrollmentCount ?? readLocalEnrollments().filter((entry) => entry.courseId === course?.id).length),
+    [course?.enrollmentCount, course?.id],
+  );
+  const isCourseStudentEnrolled = useMemo(() => Boolean(session?.userId && readLocalEnrollments().some((entry) => entry.studentId === session.userId && entry.courseId === course?.id)), [course?.id, session?.userId]);
 
   useEffect(() => {
     if (!allLessons.length) {
@@ -530,13 +548,13 @@ export function CourseDetailPage() {
       ...current,
       {
         id: crypto.randomUUID(),
-        title: `Module ${current.length + 1}`,
+        title: t('courseDetail.moduleLabel', { number: current.length + 1 }),
         lessons: [
           {
             id: crypto.randomUUID(),
-            title: 'New lesson',
+            title: t('courseDetail.newLesson'),
             duration: 10 * 60,
-            summary: 'Add the lesson summary and launch content here.',
+            summary: t('courseDetail.lessonSummaryDefault'),
             type: 'Video',
             videoName: null,
             videoUrl: null,
@@ -756,7 +774,7 @@ export function CourseDetailPage() {
       );
     } catch (uploadError) {
       const message = uploadError instanceof DOMException && uploadError.name === 'AbortError'
-        ? 'Upload cancelled.'
+        ? t('courseDetail.uploadCancelled')
         : uploadError instanceof Error
           ? uploadError.message
           : 'The uploaded lesson video could not be stored. Please choose another file or use an external link.';
@@ -821,7 +839,7 @@ export function CourseDetailPage() {
         ? 'Upload cancelled.'
         : uploadError instanceof Error
           ? uploadError.message
-          : 'The uploaded attachment could not be stored. Please choose another file or provide a direct URL.';
+          : t('courseDetail.attachmentUploadFailure');
 
       console.error('Failed to process uploaded attachment:', uploadError);
       setUploadState(key, { progress: 0, isUploading: false, error: message, loadedBytes: 0, totalBytes: file.size, abortController: undefined });
@@ -835,7 +853,7 @@ export function CourseDetailPage() {
     if (!course || !session?.userId) return;
 
     if (!canEditCourse) {
-      setSaveError('Only the course owner or an administrator can save changes for this course.');
+      setSaveError(t('courseDetail.unauthorizedSave'));
       return;
     }
 
@@ -889,12 +907,63 @@ export function CourseDetailPage() {
     navigate('/courses');
   };
 
+  const handleReviewSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!course || !session?.userId || !isCourseStudentEnrolled) return;
+
+    const trimmedComment = reviewDraft.comment.trim();
+    if (!trimmedComment) {
+      setSaveError(t('courseDetail.reviewRequired'));
+      return;
+    }
+
+    const token = typeof window !== 'undefined'
+      ? window.sessionStorage.getItem('learnflow_session_token') ?? ''
+      : '';
+
+    if (!token) {
+      setSaveError(t('courseDetail.authRequired'));
+      return;
+    }
+
+    try {
+      setSaveError(null);
+      const response = await fetch(`${API_BASE_URL}/api/courses/${encodeURIComponent(course.id)}/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          rating: reviewDraft.rating,
+          comment: trimmedComment,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error ?? payload?.detail ?? t('courseDetail.reviewFailure'));
+      }
+
+      const refreshedCourse = await fetchCourseById(course.id);
+      if (refreshedCourse) {
+        setCourse(refreshedCourse);
+      }
+
+      setReviewDraft({ rating: 5, comment: '' });
+      setSaveError(null);
+    } catch (error) {
+      console.error('Failed to submit review:', error);
+      setSaveError(error instanceof Error ? error.message : t('courseDetail.reviewFailure'));
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-[30vh] items-center justify-center">
         <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
-          Loading course content…
+          {t('courseDetail.loadingContent')}
         </div>
       </div>
     );
@@ -913,10 +982,10 @@ export function CourseDetailPage() {
       <div className="space-y-4">
         <Link to="/courses" className="btn-secondary w-fit">
           <ArrowLeft className="directional-icon h-4 w-4" />
-          Back to My Courses
+          {t('courseDetail.backToMyCourses')}
         </Link>
         <div className="card p-6 text-sm text-gray-600 dark:text-gray-300">
-          This course could not be found. Try returning to your enrolled course list.
+          {t('courseDetail.notFound')}
         </div>
       </div>
     );
@@ -937,7 +1006,7 @@ export function CourseDetailPage() {
       <div className="grid gap-6 xl:grid-cols-[320px,1fr]">
         <aside className="card overflow-hidden">
           <div className="border-b border-gray-200 px-4 py-4 dark:border-gray-800">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">Course outline</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">{t('courseDetail.courseOutline')}</p>
             <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{course.title}</h2>
           </div>
 
@@ -951,11 +1020,11 @@ export function CourseDetailPage() {
                   <button
                     type="button"
                     onClick={() => setExpandedModules((current) => ({ ...current, [module.id]: !isExpanded }))}
-                    className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+                    className="flex w-full items-center justify-between gap-3 px-3 py-3 text-start"
                   >
                     <div>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-                        Module {moduleIndex + 1}
+                        {t('courseDetail.moduleLabel', { number: moduleIndex + 1 })}
                       </p>
                       <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{module.title}</p>
                     </div>
@@ -978,7 +1047,7 @@ export function CourseDetailPage() {
                                 setSelectedLessonId(lesson.id);
                                 setActiveTab('overview');
                               }}
-                              className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors ${
+                              className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-start transition-colors ${
                                 isSelected
                                   ? 'bg-primary-50 text-primary-700 ring-1 ring-primary-200 dark:bg-primary-950/20 dark:text-primary-300 dark:ring-primary-800/60'
                                   : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
@@ -1014,8 +1083,8 @@ export function CourseDetailPage() {
             <div className="card border-primary-200 bg-primary-50/80 p-4 dark:border-primary-900/60 dark:bg-primary-950/20">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">Preview Mode (Instructor View)</p>
-                  <p className="mt-1 text-sm text-gray-700 dark:text-gray-200">Review the course exactly as students will experience it.</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">{t('courseDetail.previewMode')}</p>
+                  <p className="mt-1 text-sm text-gray-700 dark:text-gray-200">{t('courseDetail.previewDescription')}</p>
                 </div>
                 <button
                   type="button"
@@ -1023,7 +1092,7 @@ export function CourseDetailPage() {
                   className="btn-secondary"
                 >
                   <PencilLine className="h-4 w-4" />
-                  Edit Course
+                  {t('courseDetail.editCourse')}
                 </button>
               </div>
             </div>
@@ -1035,7 +1104,7 @@ export function CourseDetailPage() {
                 <div className="border-b border-gray-200 bg-gray-50 px-5 py-4 dark:border-gray-800 dark:bg-gray-900/60">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">Now playing</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">{t('courseDetail.nowPlaying')}</p>
                       <h2 className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{currentLesson.title}</h2>
                     </div>
                     <div className="inline-flex items-center gap-2 rounded-full bg-primary-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
@@ -1061,7 +1130,7 @@ export function CourseDetailPage() {
                     </div>
                   ) : (
                     <div className="flex min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">
-                      No video is attached to this lesson yet.
+                      {t('courseDetail.noVideoAttached')}
                     </div>
                   )}
                 </div>
@@ -1080,7 +1149,7 @@ export function CourseDetailPage() {
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                 }`}
               >
-                Overview
+                {t('courseDetail.overview')}
               </button>
               <button
                 type="button"
@@ -1091,7 +1160,7 @@ export function CourseDetailPage() {
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                 }`}
               >
-                Resources
+                {t('courseDetail.resources')}
               </button>
             </div>
 
@@ -1109,8 +1178,20 @@ export function CourseDetailPage() {
                 </div>
 
                 <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Instructor</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{t('courseDetail.instructor')}</p>
                   <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{instructorName}</p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
+                  <span className="rounded-full bg-gray-100 px-3 py-1 dark:bg-gray-800">{course.difficulty}</span>
+                  <span className="flex items-center gap-1 text-amber-500">
+                    <Sparkles className="h-4 w-4 fill-current" />
+                    {courseAverageRating.toFixed(1)}
+                  </span>
+                  <span>
+                    {courseReviewCount} {courseReviewCount === 1 ? (language === 'ar' ? 'تقييم' : 'review') : (language === 'ar' ? 'تقييمات' : 'reviews')}
+                  </span>
+                  <span>{enrolledStudentCount} {language === 'ar' ? 'مشترك' : 'enrolled'}</span>
                 </div>
 
                 <p className="text-sm leading-7 text-gray-600 dark:text-gray-300">
@@ -1128,7 +1209,7 @@ export function CourseDetailPage() {
                           : ''
                       }`}
                     >
-                      {completedLessonIds.includes(currentLesson.id) ? 'Mark Incomplete' : 'Mark Complete'}
+                      {completedLessonIds.includes(currentLesson.id) ? t('courseDetail.markIncomplete') : t('courseDetail.markComplete')}
                     </button>
                   </div>
                 )}
@@ -1136,7 +1217,7 @@ export function CourseDetailPage() {
             ) : (
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Lesson resources</p>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{t('courseDetail.lessonResources')}</p>
                 </div>
 
                 {currentAttachmentUrl ? (
@@ -1147,14 +1228,14 @@ export function CourseDetailPage() {
                     className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-primary-600 hover:bg-primary-50 dark:border-gray-700 dark:bg-gray-900 dark:text-primary-300 dark:hover:bg-primary-950/20"
                   >
                     <FileText className="h-4 w-4" />
-                    Download attachment
+                    {t('courseDetail.downloadAttachment')}
                   </a>
                 ) : (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No resources are attached to this lesson yet.</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{t('courseDetail.noResources')}</p>
                 )}
 
                 {currentLesson?.attachmentName && (
-                  <p className="text-sm text-gray-600 dark:text-gray-300">Attachment: {currentLesson.attachmentName}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">{t('courseDetail.attachment')}: {currentLesson.attachmentName}</p>
                 )}
               </div>
             )}
@@ -1162,7 +1243,7 @@ export function CourseDetailPage() {
             {activeTab === 'resources' && (
               <div className="mt-5 space-y-4">
                 <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Course overview</p>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{t('courseDetail.courseOverview')}</p>
                   <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">{course.description}</p>
                 </div>
 
@@ -1176,7 +1257,7 @@ export function CourseDetailPage() {
                         className="inline-flex items-center gap-2 text-sm font-medium text-primary-600 hover:underline dark:text-primary-300"
                       >
                         <PlayCircle className="h-4 w-4" />
-                        Open media source
+                        {t('courseDetail.openMediaSource')}
                       </a>
                     ) : null}
 
@@ -1188,15 +1269,96 @@ export function CourseDetailPage() {
                         className="inline-flex items-center gap-2 text-sm font-medium text-primary-600 hover:underline dark:text-primary-300"
                       >
                         <FileText className="h-4 w-4" />
-                        Download lesson resource
+                        {t('courseDetail.downloadLessonResource')}
                       </a>
                     ) : (
-                      <p className="text-sm text-gray-500 dark:text-gray-400">No downloadable resource for this lesson.</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{t('courseDetail.noDownloadableResource')}</p>
                     )}
                   </div>
                 )}
               </div>
             )}
+          </div>
+
+          <div className="card p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">{t('courseDetail.studentFeedback')}</p>
+                <h3 className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{t('courseDetail.courseRatingAndReviews')}</h3>
+              </div>
+              <div className="flex items-center gap-1 text-sm font-semibold text-amber-500">
+                <Sparkles className="h-4 w-4 fill-current" />
+                {courseAverageRating.toFixed(1)}
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {courseReviewCount > 0 && course.reviews?.length ? (
+                <div className="space-y-3">
+                  {course.reviews.slice(0, 4).map((review) => (
+                    <div key={review.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white">{review.userName}</p>
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400">{new Date(review.createdAt).toLocaleDateString()}</p>
+                        </div>
+                        <div className="flex items-center gap-1 text-amber-500">
+                          {Array.from({ length: 5 }).map((_, index) => (
+                            <Sparkles key={`${review.id}-${index}`} className={`h-3.5 w-3.5 ${index < review.rating ? 'fill-current' : 'text-gray-300 dark:text-gray-600'}`} />
+                          ))}
+                        </div>
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">{review.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {t('courseDetail.noReviewsYet')}
+                </p>
+              )}
+
+              {session && !canEditCourse && (
+                <form onSubmit={handleReviewSubmit} className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{t('courseDetail.shareYourExperience')}</p>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{isCourseStudentEnrolled ? t('courseDetail.enrolledLearner') : t('courseDetail.enrollToReview')}</span>
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2">
+                    {Array.from({ length: 5 }).map((_, index) => {
+                      const value = index + 1;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setReviewDraft((current) => ({ ...current, rating: value }))}
+                          className="p-1 text-amber-400 transition-colors hover:text-amber-500"
+                          aria-label={t('courseDetail.rateStar', { value, plural: language === 'en' && value > 1 ? 's' : '' })}
+                        >
+                          <Sparkles className={`h-5 w-5 ${value <= reviewDraft.rating ? 'fill-current' : 'text-gray-300 dark:text-gray-600'}`} />
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <textarea
+                    rows={4}
+                    value={reviewDraft.comment}
+                    onChange={(event) => setReviewDraft((current) => ({ ...current, comment: event.target.value }))}
+                    disabled={!isCourseStudentEnrolled}
+                    placeholder={isCourseStudentEnrolled ? t('courseDetail.reviewPlaceholder') : t('courseDetail.reviewPlaceholderLocked')}
+                    className="mt-3 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:bg-gray-100 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:disabled:bg-gray-900"
+                  />
+
+                  <div className="mt-3 flex justify-end">
+                    <button type="submit" disabled={!isCourseStudentEnrolled || !reviewDraft.comment.trim()} className="btn-primary disabled:opacity-50">
+                      {t('courseDetail.submitReview')}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           </div>
         </main>
       </div>
@@ -1209,7 +1371,7 @@ export function CourseDetailPage() {
         <div>
           <Link to="/courses" className="inline-flex items-center gap-2 text-sm font-medium text-primary-600 dark:text-primary-300">
             <ArrowLeft className="directional-icon h-4 w-4" />
-            Back to My Courses
+            {t('courseDetail.backToMyCourses')}
           </Link>
           <h1 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{course.title}</h1>
         </div>
@@ -1224,20 +1386,20 @@ export function CourseDetailPage() {
           <div className="mb-5 flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-                Course editing
+                {t('courseDetail.courseEditing')}
               </p>
-              <h2 className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">Edit course setup</h2>
+              <h2 className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{t('courseDetail.editCourseSetup')}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" className="btn-secondary" onClick={handleAddModule}>
                 <Plus className="h-4 w-4" />
-                Add module
+                {t('courseDetail.addModule')}
               </button>
               <button type="button" className="btn-primary" onClick={handleSaveCourseEdits}>
-                Save changes
+                {t('common.saveChanges')}
               </button>
               <button type="button" className="btn-secondary border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/30" onClick={handleDeleteCourse}>
-                Delete course
+                {t('courseDetail.deleteCourse')}
               </button>
             </div>
           </div>
@@ -1250,7 +1412,7 @@ export function CourseDetailPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="label-text">Course title</label>
+              <label className="label-text">{t('courseDetail.courseTitle')}</label>
               <input
                 value={course.title}
                 onChange={(event) => handleCourseFieldChange('title', event.target.value)}
@@ -1259,7 +1421,7 @@ export function CourseDetailPage() {
             </div>
 
             <div>
-              <label className="label-text">Description</label>
+              <label className="label-text">{t('courseDetail.description')}</label>
               <textarea
                 rows={4}
                 value={course.description}
@@ -1270,13 +1432,13 @@ export function CourseDetailPage() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="label-text">Category</label>
+                <label className="label-text">{t('courseDetail.category')}</label>
                 <input
                   value={course.category}
                   list="course-category-suggestions"
                   onChange={(event) => handleCourseFieldChange('category', event.target.value)}
                   className="input-field"
-                  placeholder="Type or choose a category"
+                  placeholder={t('courseDetail.categoryPlaceholder')}
                 />
                 <datalist id="course-category-suggestions">
                   {courseCategorySuggestions.map((option) => (
@@ -1286,7 +1448,7 @@ export function CourseDetailPage() {
               </div>
 
               <div>
-                <label className="label-text">AI model assignment</label>
+                <label className="label-text">{t('courseDetail.aiModelAssignment')}</label>
                 <select
                   value={course.aiModel ?? 'Coach Pro'}
                   onChange={(event) => handleCourseFieldChange('aiModel', event.target.value)}
@@ -1311,7 +1473,7 @@ export function CourseDetailPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex w-full items-center gap-3">
                     <div className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-                      Module {moduleIndex + 1}
+                      {t('courseDetail.moduleLabel', { number: moduleIndex + 1 })}
                     </div>
                     <input
                       value={module.title}
@@ -1329,12 +1491,12 @@ export function CourseDetailPage() {
                     type="button"
                     onClick={() => handleDeleteModule(moduleIndex)}
                     className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800 dark:hover:text-red-400"
-                    aria-label="Delete module"
+                    aria-label={t('courseDetail.deleteModule')}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
                   <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                    {module.lessons.length} lessons
+                    {module.lessons.length} {t('courseDetail.lessonsLabel')}
                   </span>
                 </div>
               </div>
@@ -1424,7 +1586,7 @@ export function CourseDetailPage() {
                             <textarea
                               rows={2}
                               value={lesson.summary ?? ''}
-                              placeholder="Lesson summary"
+                              placeholder={t('courseDetail.lessonSummaryPlaceholder')}
                               onChange={(event) =>
                                 setModules((current) =>
                                   current.map((item, modulePos) =>
@@ -1448,7 +1610,7 @@ export function CourseDetailPage() {
                               <div className="flex flex-wrap gap-3">
                                 <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
                                   <Upload className="h-3.5 w-3.5" />
-                                  {lesson.videoName ? 'Replace Video' : 'Upload Video'}
+                                  {lesson.videoName ? t('courseDetail.replaceVideo') : t('courseDetail.uploadVideo')}
                                   <input
                                     type="file"
                                     accept="video/*"
@@ -1459,7 +1621,7 @@ export function CourseDetailPage() {
 
                                 <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800">
                                   <FileText className="h-3.5 w-3.5" />
-                                  {lesson.attachmentName ? 'Replace Document' : 'Upload Document'}
+                                  {lesson.attachmentName ? t('courseDetail.replaceDocument') : t('courseDetail.uploadDocument')}
                                   <input
                                     type="file"
                                     accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
@@ -1485,14 +1647,14 @@ export function CourseDetailPage() {
                                         ) : (
                                           <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
                                         )}
-                                        <span>{uploadState.error ? 'Upload failed' : uploadState.isUploading ? `${kind === 'video' ? 'Video' : 'Document'} upload` : 'Upload complete'}</span>
+                                        <span>{uploadState.error ? t('courseDetail.uploadFailed') : uploadState.isUploading ? (kind === 'video' ? t('courseDetail.videoUpload') : t('courseDetail.documentUpload')) : t('courseDetail.uploadComplete')}</span>
                                       </div>
-                                      <span>{uploadState.error ? 'Failed' : `${uploadState.progress}%`}</span>
+                                      <span>{uploadState.error ? t('courseDetail.failed') : `${uploadState.progress}%`}</span>
                                     </div>
 
                                     <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400">
                                       <span>{formatFileSize(uploadState.loadedBytes)} / {formatFileSize(uploadState.totalBytes)}</span>
-                                      {!uploadState.error && !uploadState.isUploading && <span>Ready</span>}
+                                      {!uploadState.error && !uploadState.isUploading && <span>{t('courseDetail.ready')}</span>}
                                     </div>
 
                                     <div className="h-2.5 overflow-hidden rounded-full bg-gray-200 shadow-sm dark:bg-gray-800">
@@ -1508,7 +1670,7 @@ export function CourseDetailPage() {
                                         onClick={() => cancelUpload(uploadKey)}
                                         className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
                                       >
-                                        Cancel upload
+                                        {t('courseDetail.cancelUpload')}
                                       </button>
                                     )}
 
@@ -1527,7 +1689,7 @@ export function CourseDetailPage() {
                             type="button"
                             onClick={() => handleDeleteLesson(moduleIndex, lesson.id)}
                             className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800 dark:hover:text-red-400"
-                            aria-label="Delete lesson"
+                            aria-label={t('courseDetail.deleteLesson')}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -1545,7 +1707,7 @@ export function CourseDetailPage() {
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-400"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  Add lesson to Module {moduleIndex + 1}
+                  {t('courseDetail.addLessonToModule', { number: moduleIndex + 1 })}
                 </button>
               </div>
             </div>

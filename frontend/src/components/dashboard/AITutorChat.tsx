@@ -265,7 +265,7 @@ export const AITutorChat = memo(function AITutorChat() {
                 id="ai-model-select"
                 value={selectedModelId}
                 onChange={(event) => handleModelSelect(event.target.value)}
-                className="bg-transparent pr-7 text-sm font-medium text-gray-700 outline-none dark:text-gray-200"
+                className="bg-transparent pe-7 text-sm font-medium text-gray-700 outline-none dark:text-gray-200"
               >
                 {MODEL_PROFILES.map((model) => (
                   <option key={model.id} value={model.id}>

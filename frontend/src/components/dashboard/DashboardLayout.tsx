@@ -28,7 +28,7 @@ export function DashboardLayout() {
         onCloseMobile={() => setMobileOpen(false)}
       />
 
-      <div className="lg:pl-64">
+      <div className="lg:ps-64">
         <TopBar onOpenMobile={() => setMobileOpen(true)} />
         <main className="mx-auto max-w-7xl px-4 py-6 lg:px-8 lg:py-8">
           <Outlet />

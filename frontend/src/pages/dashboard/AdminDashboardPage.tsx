@@ -378,7 +378,7 @@ export function AdminDashboardPage() {
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">{t('dashboard.liveActivity')}</p><h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.auditStream')}</h2></div><Activity className="h-5 w-5 text-primary-500" /></div>
           <div className="overflow-x-auto p-5">
-            {activity.length === 0 ? <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{t('dashboard.noEvents')}</p> : <table className="min-w-full text-left text-sm"><thead><tr className="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-gray-800"><th className="pb-3 pr-4">{t('common.actions')}</th><th className="pb-3 pr-4">{t('courses.course')}</th><th className="pb-3">{t('common.when')}</th></tr></thead><tbody>{activity.map((event) => <tr key={`${event.event_type}-${event.id}`} className="border-b border-gray-100 last:border-0 dark:border-gray-800"><td className="py-3 pr-4 font-medium text-gray-900 dark:text-white">{event.event_type === 'enrollment' ? t('dashboard.enrollments') : event.event_type === 'course' ? `${t('courses.course')} ${translateActivityDetail(event.detail)}` : translateActivityDetail(event.detail)}</td><td className="py-3 pr-4 text-gray-600 dark:text-gray-300">{event.subject}</td><td className="py-3 text-xs text-gray-500">{formatDate(event.occurred_at, { dateStyle: 'medium', timeStyle: 'short' })}</td></tr>)}</tbody></table>}
+            {activity.length === 0 ? <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{t('dashboard.noEvents')}</p> : <table className="min-w-full text-start text-sm"><thead><tr className="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-gray-800"><th className="pb-3 pe-4">{t('common.actions')}</th><th className="pb-3 pe-4">{t('courses.course')}</th><th className="pb-3">{t('common.when')}</th></tr></thead><tbody>{activity.map((event) => <tr key={`${event.event_type}-${event.id}`} className="border-b border-gray-100 last:border-0 dark:border-gray-800"><td className="py-3 pe-4 font-medium text-gray-900 dark:text-white">{event.event_type === 'enrollment' ? t('dashboard.enrollments') : event.event_type === 'course' ? `${t('courses.course')} ${translateActivityDetail(event.detail)}` : translateActivityDetail(event.detail)}</td><td className="py-3 pe-4 text-gray-600 dark:text-gray-300">{event.subject}</td><td className="py-3 text-xs text-gray-500">{formatDate(event.occurred_at, { dateStyle: 'medium', timeStyle: 'short' })}</td></tr>)}</tbody></table>}
           </div>
         </div>
 
@@ -394,8 +394,8 @@ export function AdminDashboardPage() {
       <div className="card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400">{t('dashboard.runtimeOperations')}</p><h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.runtimeOperations')}</h2></div><Power className="h-5 w-5 text-primary-500" /></div>
         <div className="mt-5 grid gap-4 md:grid-cols-3">
-          <button type="button" onClick={() => void setMaintenanceMode(!maintenance)} className={`rounded-xl border p-4 text-left transition-colors ${maintenance ? 'border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20' : 'border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900/60'}`}><span className="text-sm font-semibold text-gray-900 dark:text-white">{t('dashboard.maintenanceMode')}</span><span className="mt-1 block text-xs text-gray-500">{maintenance ? t('dashboard.enabledClickToggle') : t('dashboard.disabledClickToggle')}</span></button>
-          <button type="button" onClick={() => void purgeCache()} className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-left hover:border-primary-300 dark:border-gray-800 dark:bg-gray-900/60"><span className="text-sm font-semibold text-gray-900 dark:text-white">{t('dashboard.purgeCache')}</span><span className="mt-1 block text-xs text-gray-500">{t('dashboard.purgeCacheDescription')}</span></button>
+          <button type="button" onClick={() => void setMaintenanceMode(!maintenance)} className={`rounded-xl border p-4 text-start transition-colors ${maintenance ? 'border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20' : 'border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900/60'}`}><span className="text-sm font-semibold text-gray-900 dark:text-white">{t('dashboard.maintenanceMode')}</span><span className="mt-1 block text-xs text-gray-500">{maintenance ? t('dashboard.enabledClickToggle') : t('dashboard.disabledClickToggle')}</span></button>
+          <button type="button" onClick={() => void purgeCache()} className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-start hover:border-primary-300 dark:border-gray-800 dark:bg-gray-900/60"><span className="text-sm font-semibold text-gray-900 dark:text-white">{t('dashboard.purgeCache')}</span><span className="mt-1 block text-xs text-gray-500">{t('dashboard.purgeCacheDescription')}</span></button>
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60"><span className="text-sm font-semibold text-gray-900 dark:text-white">{t('dashboard.runtimeMetrics')}</span><span className="mt-1 block text-xs text-gray-500">{system ? `${system.platform} · Python ${system.python_version} · ${formatNumber(system.memory_mb)} MB` : t('dashboard.metricsUnavailable')}</span></div>
         </div>
       </div>
@@ -512,25 +512,25 @@ export function AdminDashboardPage() {
         </div>
 
         <div className="overflow-x-auto p-5">
-          <table className="min-w-full text-left text-sm text-gray-700 dark:text-gray-200">
+          <table className="min-w-full text-start text-sm text-gray-700 dark:text-gray-200">
             <thead>
               <tr className="border-b border-gray-200 text-xs uppercase tracking-[0.08em] text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                <th className="pb-3 pr-4">{t('common.user')}</th>
-                <th className="pb-3 pr-4">{t('common.role')}</th>
-                <th className="pb-3 pr-4">{t('common.status')}</th>
-                <th className="pb-3 pr-4">{t('common.actions')}</th>
+                <th className="pb-3 pe-4">{t('common.user')}</th>
+                <th className="pb-3 pe-4">{t('common.role')}</th>
+                <th className="pb-3 pe-4">{t('common.status')}</th>
+                <th className="pb-3 pe-4">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {users.map((user) => (
                 <tr key={user.id} className="border-b border-gray-200 last:border-b-0 dark:border-gray-800">
-                  <td className="py-3 pr-4">
+                  <td className="py-3 pe-4">
                     <div>
                       <div className="font-medium text-gray-900 dark:text-white">{user.name}</div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">{user.email}</div>
                     </div>
                   </td>
-                  <td className="py-3 pr-4">
+                  <td className="py-3 pe-4">
                     <select
                       value={user.role}
                       onChange={(event) => void updateUserRole(user.id, event.target.value as UserRole)}
@@ -541,7 +541,7 @@ export function AdminDashboardPage() {
                       <option value="admin">{t('common.admins')}</option>
                     </select>
                   </td>
-                  <td className="py-3 pr-4">
+                  <td className="py-3 pe-4">
                     <select
                       value={user.status}
                       onChange={(event) => void updateUserStatus(user.id, event.target.value as 'active' | 'inactive' | 'suspended')}
@@ -580,24 +580,24 @@ export function AdminDashboardPage() {
         </div>
 
         <div className="overflow-x-auto p-5">
-          <table className="min-w-full text-left text-sm text-gray-700 dark:text-gray-200">
+          <table className="min-w-full text-start text-sm text-gray-700 dark:text-gray-200">
             <thead>
               <tr className="border-b border-gray-200 text-xs uppercase tracking-[0.08em] text-gray-500 dark:border-gray-800 dark:text-gray-400">
-                <th className="pb-3 pr-4">{t('courses.course')}</th>
-                <th className="pb-3 pr-4">{t('courses.instructor')}</th>
-                <th className="pb-3 pr-4">{t('common.status')}</th>
-                <th className="pb-3 pr-4">{t('common.actions')}</th>
+                <th className="pb-3 pe-4">{t('courses.course')}</th>
+                <th className="pb-3 pe-4">{t('courses.instructor')}</th>
+                <th className="pb-3 pe-4">{t('common.status')}</th>
+                <th className="pb-3 pe-4">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {courses.map((course) => (
                 <tr key={course.id} className="border-b border-gray-200 last:border-b-0 dark:border-gray-800">
-                  <td className="py-3 pr-4">
+                  <td className="py-3 pe-4">
                     <div className="font-medium text-gray-900 dark:text-white">{course.title}</div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">{course.description}</div>
                   </td>
-                  <td className="py-3 pr-4 text-xs text-gray-500 dark:text-gray-400">{course.instructor_id}</td>
-                  <td className="py-3 pr-4">
+                  <td className="py-3 pe-4 text-xs text-gray-500 dark:text-gray-400">{course.instructor_id}</td>
+                  <td className="py-3 pe-4">
                     <select
                       value={course.is_published ? 'published' : 'draft'}
                       onChange={(event) => void updateCourseStatus(course.id, event.target.value as 'draft' | 'published' | 'review' | 'archived')}

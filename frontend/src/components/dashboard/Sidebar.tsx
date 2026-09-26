@@ -3,6 +3,7 @@ import { GraduationCap, X } from 'lucide-react';
 import { getNavItemsForRole } from '@/config/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useI18n } from '@/context/I18nContext';
+import { useScrollLock } from '@/hooks/useScrollLock';
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -11,8 +12,11 @@ interface SidebarProps {
 
 export function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
   const { profile } = useAuth();
-  const { t } = useI18n();
+  const { t, direction } = useI18n();
   const navItems = getNavItemsForRole(profile?.role);
+  const mobileTranslate = mobileOpen ? 'translate-x-0' : direction === 'rtl' ? 'translate-x-full' : '-translate-x-full';
+
+  useScrollLock(mobileOpen);
 
   return (
     <>
@@ -22,13 +26,13 @@ export function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
           className="fixed inset-0 z-30 bg-gray-900/50 backdrop-blur-sm lg:hidden"
           onClick={onCloseMobile}
           aria-hidden="true"
+          style={{ overscrollBehavior: 'contain' }}
         />
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-gray-200 bg-white transition-transform duration-300 dark:border-gray-800 dark:bg-gray-900 lg:translate-x-0 ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 start-0 z-40 flex w-64 flex-col border-e border-gray-200 bg-white transition-transform duration-300 dark:border-gray-800 dark:bg-gray-900 lg:translate-x-0 ${mobileTranslate}`}
+        style={{ overscrollBehavior: 'contain' }}
       >
         {/* Logo header */}
         <div className="flex h-16 items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800">
@@ -37,7 +41,7 @@ export function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
               <GraduationCap className="h-5 w-5 text-white" />
             </div>
             <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">
-              LearnFlow AI
+              Fasl_ai
             </span>
           </div>
           <button
@@ -50,13 +54,14 @@ export function Sidebar({ mobileOpen, onCloseMobile }: SidebarProps) {
         </div>
 
         {/* Nav items */}
-        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        <nav className="flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-4">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
               <NavLink
                 key={item.path}
                 to={item.path}
+                end={item.path === '/dashboard' || item.path === '/admin'}
                 onClick={onCloseMobile}
                 className={({ isActive }) =>
                   `group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${

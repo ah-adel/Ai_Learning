@@ -27,9 +27,9 @@ logging.basicConfig(level=logging.INFO)
 initialize_database()
 
 app = FastAPI(
-    title="Async Catalog API",
+    title=settings.app_name,
     version="0.1.0",
-    description="A modern FastAPI service with strict validation and async endpoints.",
+    description="Fasl_ai application API.",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -173,7 +173,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
 @app.get("/", tags=["meta"])
 async def root() -> dict[str, str]:
-    return {"service": "Async Catalog API", "status": "ok"}
+    return {"service": settings.app_name, "status": "ok"}
 
 
 @app.get("/health", response_model=ApiSuccessResponse[dict[str, str]], tags=["meta"])

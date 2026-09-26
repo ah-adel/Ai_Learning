@@ -34,8 +34,9 @@ export function resolveInitialLanguage(): Language {
 
 export function applyLanguageToDocument(language: Language) {
   if (typeof document === 'undefined') return;
+  const direction = language === 'ar' ? 'rtl' : 'ltr';
   document.documentElement.lang = language;
-  document.documentElement.dir = 'ltr';
+  document.documentElement.dir = direction;
 }
 
 export function I18nProvider({ children, initialLanguage = resolveInitialLanguage() }: { children: ReactNode; initialLanguage?: Language }) {
@@ -46,9 +47,11 @@ export function I18nProvider({ children, initialLanguage = resolveInitialLanguag
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
 
+  const direction = language === 'ar' ? 'rtl' : 'ltr';
+
   const value = useMemo<I18nContextValue>(() => ({
     language,
-    direction: 'ltr',
+    direction,
     setLanguage: (nextLanguage) => setLanguageState(nextLanguage),
     toggleLanguage: () => setLanguageState((current) => current === 'ar' ? 'en' : 'ar'),
     t: (key, params) => {

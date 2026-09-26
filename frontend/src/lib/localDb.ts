@@ -51,6 +51,15 @@ export type CourseModuleRecord = Module & {
   lessons: CourseLessonRecord[];
 };
 
+export type CourseReviewRecord = {
+  id: string;
+  userId: string;
+  userName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+};
+
 export type LocalCourseRecord = Course & {
   description: string;
   category: string;
@@ -60,6 +69,10 @@ export type LocalCourseRecord = Course & {
   status: 'draft' | 'published' | 'review';
   thumbnail: string | null;
   difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+  reviews: CourseReviewRecord[];
+  enrollmentCount?: number;
+  reviewCount?: number;
+  averageRating?: number;
   isPublished: boolean;
   createdAt: string;
   modules?: CourseModuleRecord[];
@@ -127,6 +140,25 @@ export function normalizeLessonMedia<T extends Partial<CourseLessonRecord>>(less
   };
 }
 
+const normalizeCourseDifficulty = (value: unknown): LocalCourseRecord['difficulty'] => {
+  if (typeof value !== 'string') {
+    return 'Beginner';
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 'Beginner';
+  }
+
+  const normalizedValue = trimmed.toLowerCase();
+
+  if (normalizedValue === 'beginner') return 'Beginner';
+  if (normalizedValue === 'intermediate') return 'Intermediate';
+  if (normalizedValue === 'advanced') return 'Advanced';
+
+  return trimmed as LocalCourseRecord['difficulty'];
+};
+
 export function normalizeStoredCourse(course: Partial<LocalCourseRecord> | null | undefined): LocalCourseRecord | null {
   if (!course) return null;
 
@@ -135,8 +167,24 @@ export function normalizeStoredCourse(course: Partial<LocalCourseRecord> | null 
     lessons: module.lessons.map((lesson) => normalizeLessonMedia(lesson)),
   }));
 
+  const normalizedReviews = Array.isArray(course.reviews)
+    ? course.reviews.map((review) => ({
+        id: String(review.id ?? crypto.randomUUID()),
+        userId: String(review.userId ?? 'anonymous-student'),
+        userName: String(review.userName ?? 'Student'),
+        rating: Number.isFinite(Number(review.rating)) ? Math.min(5, Math.max(1, Number(review.rating))) : 5,
+        comment: String(review.comment ?? '').trim(),
+        createdAt: String(review.createdAt ?? new Date().toISOString()),
+      }))
+    : [];
+
   return {
     ...course,
+    difficulty: normalizeCourseDifficulty(course.difficulty),
+    reviews: normalizedReviews,
+    enrollmentCount: Number(course.enrollmentCount ?? 0),
+    reviewCount: Number(course.reviewCount ?? normalizedReviews.length),
+    averageRating: Number(course.averageRating ?? (normalizedReviews.length ? normalizedReviews.reduce((sum, review) => sum + review.rating, 0) / normalizedReviews.length : 0)),
     modules: normalizedModules,
   } as LocalCourseRecord;
 }
@@ -255,6 +303,24 @@ const cleanSeedCourses = (): LocalCourseRecord[] => [
     thumbnail: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1200&q=80',
     aiModel: 'Coach Pro',
     difficulty: 'Beginner',
+    reviews: [
+      {
+        id: 'review-seed-1',
+        userId: 'student-1',
+        userName: 'Ava Thompson',
+        rating: 5,
+        comment: 'The structure was clear, practical, and immediately useful in my daily workflow.',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'review-seed-2',
+        userId: 'student-2',
+        userName: 'Noah Patel',
+        rating: 4,
+        comment: 'Strong beginner content with good examples and realistic exercises.',
+        createdAt: new Date().toISOString(),
+      },
+    ],
     isPublished: true,
     createdAt: new Date().toISOString(),
     modules: [
@@ -379,8 +445,8 @@ export const MASTER_ADMIN_EMAIL = 'ah.adel2188@gmail.com';
 const defaultSettings: LocalPlatformSettings = {
   adminName: 'Platform Admin',
   adminEmail: MASTER_ADMIN_EMAIL,
-  companyName: 'LearnFlow AI',
-  siteName: 'LearnFlow AI Academy',
+  companyName: 'Fasl_ai',
+  siteName: 'Fasl_ai',
   timezone: 'UTC',
   allowStudentSignup: true,
   requireEmailVerification: true,
@@ -677,6 +743,65 @@ export function readLocalProfiles(): Profile[] {
 
 export function writeLocalProfiles(profiles: Profile[]) {
   writeLocalStorageJSON(getLocalProfilesKey(), profiles);
+}
+
+export function getCourseReviewStats(course: Partial<LocalCourseRecord> | null | undefined) {
+  const reviews = Array.isArray(course?.reviews) ? course.reviews : [];
+  const explicitReviewCount = Number.isFinite(Number(course?.reviewCount)) ? Number(course?.reviewCount) : undefined;
+  const explicitAverageRating = Number.isFinite(Number(course?.averageRating)) ? Number(course?.averageRating) : undefined;
+
+  const computedReviewCount = reviews.length;
+  const computedAverageRating = reviews.length
+    ? Number((reviews.reduce((sum, review) => sum + (Number(review.rating) || 0), 0) / reviews.length).toFixed(1))
+    : 0;
+
+  const reviewCount = explicitReviewCount ?? computedReviewCount;
+  const averageRating = explicitAverageRating ?? (reviewCount > 0 ? computedAverageRating : 0);
+
+  return {
+    averageRating: Number(averageRating.toFixed(1)),
+    reviewCount,
+  };
+}
+
+export function upsertCourseReview(
+  courseId: string,
+  review: { userId: string; userName: string; rating: number; comment: string },
+): CourseReviewRecord | null {
+  if (!courseId || !review.userId) {
+    return null;
+  }
+
+  const trimmedComment = review.comment.trim();
+  const rating = Math.min(5, Math.max(1, Number(review.rating) || 5));
+
+  if (!trimmedComment) {
+    return null;
+  }
+
+  const courses = readLocalCourses();
+  const targetCourse = courses.find((course) => course.id === courseId);
+  if (!targetCourse) {
+    return null;
+  }
+
+  const nextReview: CourseReviewRecord = {
+    id: globalThis.crypto?.randomUUID?.() ?? `${review.userId}:${Date.now()}`,
+    userId: review.userId,
+    userName: review.userName.trim() || 'Student',
+    rating,
+    comment: trimmedComment,
+    createdAt: new Date().toISOString(),
+  };
+
+  const existingIndex = targetCourse.reviews.findIndex((item) => item.userId === review.userId);
+  const reviews = existingIndex >= 0
+    ? targetCourse.reviews.map((item, index) => index === existingIndex ? { ...item, ...nextReview } : item)
+    : [nextReview, ...targetCourse.reviews];
+
+  const nextCourses = courses.map((course) => course.id === courseId ? { ...course, reviews } : course);
+  writeLocalCourses(nextCourses);
+  return reviews[existingIndex >= 0 ? existingIndex : 0];
 }
 
 export function readLocalCourses(): LocalCourseRecord[] {

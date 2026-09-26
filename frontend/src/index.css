@@ -11,6 +11,22 @@
 }
 
 @layer base {
+  :root {
+    --popover: #ffffff;
+    --popover-foreground: #111827;
+    --popover-border: #e5e7eb;
+    --popover-accent: #f3f4f6;
+    --popover-accent-foreground: #111827;
+  }
+
+  .dark {
+    --popover: #111827;
+    --popover-foreground: #f9fafb;
+    --popover-border: #374151;
+    --popover-accent: #1f2937;
+    --popover-accent-foreground: #f9fafb;
+  }
+
   * {
     @apply border-gray-200 dark:border-gray-800;
   }
@@ -24,6 +40,12 @@
   body {
     @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    overscroll-behavior: contain;
+  }
+
+  body.scroll-locked {
+    overflow: hidden !important;
+    overscroll-behavior: none;
   }
 
   ::selection {

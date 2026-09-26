@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { isValidEmail, sanitizeEmail, validatePassword } from '@/lib/validation';
 import { useTranslation } from '@/context/I18nContext';
+import { localizedRuntimeError } from '@/lib/errorMessages';
 
 export function SignInPage() {
   const { signIn, user, loading: authLoading } = useAuth();
@@ -30,7 +31,7 @@ export function SignInPage() {
     }
 
     if (passwordError) {
-      setError(passwordError);
+      setError(localizedRuntimeError(new Error(passwordError), passwordError));
       return;
     }
 
@@ -38,7 +39,7 @@ export function SignInPage() {
 
     const { error: signInError } = await signIn(sanitizedEmail, password.trim());
     if (signInError) {
-      setError(signInError);
+      setError(localizedRuntimeError(new Error(signInError), signInError));
       setLoading(false);
     }
   }
@@ -61,15 +62,15 @@ export function SignInPage() {
             {t('auth.email')}
           </label>
           <div className="relative">
-            <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Mail className="pointer-events-none absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               id="email"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="input-field pl-10"
+              placeholder={t('auth.emailPlaceholder')}
+              className="input-field ps-10"
               autoComplete="email"
               autoFocus
             />
@@ -81,7 +82,7 @@ export function SignInPage() {
             {t('auth.password')}
           </label>
           <div className="relative">
-            <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Lock className="pointer-events-none absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               id="password"
               type={showPassword ? 'text' : 'password'}
@@ -89,13 +90,13 @@ export function SignInPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t('auth.passwordPlaceholder')}
-              className="input-field pl-10 pr-10"
+              className="input-field ps-10 pe-10"
               autoComplete="current-password"
             />
             <button
               type="button"
               onClick={() => setShowPassword((s) => !s)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300"
+              className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300"
               aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
             >
               {showPassword ? (

@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS courses (
   thumbnail_url TEXT,
   price NUMERIC(10, 2) NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'draft',
+  category TEXT NOT NULL DEFAULT 'General',
+  difficulty TEXT NOT NULL DEFAULT 'Beginner' CHECK (difficulty IN ('Beginner', 'Intermediate', 'Advanced')),
+  ai_model TEXT NOT NULL DEFAULT 'Coach Pro',
   is_featured BOOLEAN NOT NULL DEFAULT FALSE,
   is_published BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -41,8 +44,16 @@ CREATE TABLE IF NOT EXISTS courses (
 
 ALTER TABLE courses ADD COLUMN IF NOT EXISTS price NUMERIC(10, 2) NOT NULL DEFAULT 0;
 ALTER TABLE courses ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'draft';
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'General';
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS difficulty TEXT NOT NULL DEFAULT 'Beginner';
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS ai_model TEXT NOT NULL DEFAULT 'Coach Pro';
 ALTER TABLE courses ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE courses DROP CONSTRAINT IF EXISTS courses_difficulty_check;
+ALTER TABLE courses ADD CONSTRAINT courses_difficulty_check CHECK (difficulty IN ('Beginner', 'Intermediate', 'Advanced'));
 UPDATE courses SET status = CASE WHEN is_published THEN 'published' ELSE 'draft' END WHERE status = 'draft';
+UPDATE courses SET category = 'General' WHERE category IS NULL OR TRIM(category) = '';
+UPDATE courses SET difficulty = 'Beginner' WHERE difficulty IS NULL OR TRIM(difficulty) = '';
+UPDATE courses SET ai_model = 'Coach Pro' WHERE ai_model IS NULL OR TRIM(ai_model) = '';
 
 CREATE TABLE IF NOT EXISTS instructor_profiles (
   id TEXT PRIMARY KEY,
@@ -86,9 +97,12 @@ CREATE TABLE IF NOT EXISTS lessons (
   attachment_name TEXT,
   position INTEGER NOT NULL DEFAULT 0,
   duration_minutes INTEGER,
+  duration_seconds INTEGER,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (module_id) REFERENCES course_modules(id) ON DELETE CASCADE
 );
+
+ALTER TABLE lessons ADD COLUMN IF NOT EXISTS duration_seconds INTEGER;
 
 CREATE TABLE IF NOT EXISTS enrollments (
   id TEXT PRIMARY KEY,
@@ -101,8 +115,21 @@ CREATE TABLE IF NOT EXISTS enrollments (
   FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS course_reviews (
+  id TEXT PRIMARY KEY,
+  course_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (course_id, student_id),
+  FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+  FOREIGN KEY (student_id) REFERENCES profiles(id) ON DELETE CASCADE
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_student_course_unique
   ON enrollments(student_id, course_id);
+CREATE INDEX IF NOT EXISTS idx_course_reviews_course ON course_reviews(course_id);
 
 ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_modules ENABLE ROW LEVEL SECURITY;

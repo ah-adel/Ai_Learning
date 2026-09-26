@@ -34,7 +34,11 @@ function normalizeApiCourseRecord(course: Record<string, unknown>): LocalCourseR
           title: String((lesson as { title?: string }).title ?? 'Lesson'),
           summary: String((lesson as { content?: string }).content ?? 'Lesson content'),
           type: normalizeLessonType((lesson as { type?: string }).type),
-          duration: Number((lesson as { duration_minutes?: number; duration?: number }).duration_minutes ?? (lesson as { duration_minutes?: number; duration?: number }).duration ?? 0),
+          duration: Number((lesson as { duration_seconds?: number; duration_minutes?: number; duration?: number }).duration_seconds
+            ?? ((lesson as { duration_minutes?: number }).duration_minutes != null
+              ? Number((lesson as { duration_minutes?: number }).duration_minutes) * 60
+              : (lesson as { duration?: number }).duration)
+            ?? 0),
           videoName: typeof (lesson as { video_name?: string }).video_name === 'string' ? String((lesson as { video_name?: string }).video_name) : null,
           videoUrl: typeof (lesson as { video_url?: string }).video_url === 'string' ? String((lesson as { video_url?: string }).video_url) : null,
           attachmentName: typeof (lesson as { attachment_name?: string }).attachment_name === 'string' ? String((lesson as { attachment_name?: string }).attachment_name) : null,
@@ -43,6 +47,34 @@ function normalizeApiCourseRecord(course: Record<string, unknown>): LocalCourseR
         }))
       : [],
   })) : [];
+
+  const rawDifficulty = typeof (course as { difficulty?: string }).difficulty === 'string'
+    ? String((course as { difficulty?: string }).difficulty).trim()
+    : '';
+  const normalizedDifficulty = (() => {
+    if (!rawDifficulty) return 'Beginner';
+
+    const lowered = rawDifficulty.toLowerCase();
+    if (lowered === 'beginner') return 'Beginner';
+    if (lowered === 'intermediate') return 'Intermediate';
+    if (lowered === 'advanced') return 'Advanced';
+
+    return rawDifficulty as LocalCourseRecord['difficulty'];
+  })();
+  const reviews = Array.isArray((course as { reviews?: Array<Record<string, unknown>> }).reviews)
+    ? ((course as { reviews?: Array<Record<string, unknown>> }).reviews ?? []).map((review) => ({
+        id: String((review as { id?: string }).id ?? crypto.randomUUID()),
+        userId: String((review as { user_id?: string; userId?: string }).user_id ?? (review as { user_id?: string; userId?: string }).userId ?? 'anonymous-student'),
+        userName: String((review as { user_name?: string; userName?: string }).user_name ?? (review as { user_name?: string; userName?: string }).userName ?? 'Student'),
+        rating: Number.isFinite(Number((review as { rating?: number }).rating)) ? Math.min(5, Math.max(1, Number((review as { rating?: number }).rating))) : 5,
+        comment: String((review as { comment?: string }).comment ?? '').trim(),
+        createdAt: String((review as { created_at?: string; createdAt?: string }).created_at ?? (review as { created_at?: string; createdAt?: string }).createdAt ?? new Date().toISOString()),
+      }))
+    : [];
+
+  const enrollmentCount = Number((course as { enrollment_count?: number; enrollmentCount?: number }).enrollment_count ?? (course as { enrollment_count?: number; enrollmentCount?: number }).enrollmentCount ?? 0);
+  const reviewCount = Number((course as { review_count?: number; reviewCount?: number }).review_count ?? (course as { review_count?: number; reviewCount?: number }).reviewCount ?? reviews.length);
+  const averageRating = Number((course as { average_rating?: number; averageRating?: number }).average_rating ?? (course as { average_rating?: number; averageRating?: number }).averageRating ?? (reviews.length ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length : 0));
 
   return {
     id: String((course as { id?: string }).id ?? crypto.randomUUID()),
@@ -53,10 +85,14 @@ function normalizeApiCourseRecord(course: Record<string, unknown>): LocalCourseR
     category: String((course as { category?: string }).category ?? 'General'),
     status: (course as { status?: string }).status === 'published' ? 'published' : 'draft',
     thumbnail: typeof (course as { thumbnail_url?: string }).thumbnail_url === 'string' ? String((course as { thumbnail_url?: string }).thumbnail_url) : null,
-    difficulty: 'Beginner',
+    difficulty: normalizedDifficulty,
+    reviews,
+    enrollmentCount,
+    reviewCount,
+    averageRating,
     isPublished: Boolean((course as { is_published?: boolean }).is_published ?? ((course as { status?: string }).status === 'published')), 
     createdAt: typeof (course as { created_at?: string }).created_at === 'string' ? String((course as { created_at?: string }).created_at) : new Date().toISOString(),
-    aiModel: 'Coach Pro',
+    aiModel: String((course as { ai_model?: string; aiModel?: string }).ai_model ?? (course as { ai_model?: string; aiModel?: string }).aiModel ?? 'Coach Pro'),
     modules,
   } satisfies LocalCourseRecord;
 }
@@ -129,8 +165,12 @@ export async function saveCourseForInstructor(course: LocalCourseRecord, instruc
         title: normalizedCourse.title,
         description: normalizedCourse.description,
         thumbnail_url: normalizedCourse.thumbnail,
+        category: normalizedCourse.category ?? 'General',
+        difficulty: normalizedCourse.difficulty,
+        ai_model: normalizedCourse.aiModel ?? 'Coach Pro',
         status: normalizedCourse.isPublished ? 'published' : 'draft',
         is_published: normalizedCourse.isPublished,
+        reviews: normalizedCourse.reviews ?? [],
         modules: (normalizedCourse.modules ?? []).map((module) => ({
           id: module.id,
           title: module.title,
@@ -145,6 +185,7 @@ export async function saveCourseForInstructor(course: LocalCourseRecord, instruc
             attachment_name: lesson.attachmentName,
             position: 0,
             duration_minutes: lesson.duration ? Math.max(1, Math.round(Number(lesson.duration) / 60)) : 0,
+            duration_seconds: lesson.duration ? Math.max(0, Math.round(Number(lesson.duration))) : 0,
           })),
         })),
       }),

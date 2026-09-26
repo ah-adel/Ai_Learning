@@ -74,6 +74,28 @@ class SignUpRequest(BaseSchema):
         return normalized
 
 
+class AccountProfileUpdate(BaseSchema):
+    full_name: str = Field(..., min_length=2, max_length=120, description="Updated user full name.")
+    email: str = Field(..., description="Updated account email.")
+    bio: str | None = Field(default=None, max_length=250, description="Updated profile biography.")
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Full name must contain at least 2 characters.")
+        return normalized
+
+    @field_validator("email")
+    @classmethod
+    def validate_account_email(cls, value: str) -> str:
+        normalized = normalize_email(value)
+        if not is_valid_email(normalized):
+            raise ValueError("Email address is invalid.")
+        return normalized
+
+
 class AuthResult(BaseSchema):
     error: str | None = Field(default=None, description="Optional authentication error.")
     user: SessionUser | None = Field(default=None, description="Authenticated user payload.")

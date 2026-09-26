@@ -16,19 +16,49 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+class PosixCompatiblePath(type(Path())):
+    def __str__(self) -> str:
+        return super().__str__().replace('\\', '/')
+
+    def __fspath__(self) -> str:
+        return str(self)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, (str, os.PathLike)):
+            return str(self) == str(other).replace('\\', '/')
+        if hasattr(other, '__fspath__'):
+            return str(self) == str(other).replace('\\', '/')
+        return super().__eq__(other)
+
+    def __hash__(self) -> int:
+        return hash(str(self))
+
+
 def resolve_schema_path(source_path: Path | None = None) -> Path:
-    base_path = (source_path or Path(__file__)).resolve()
+    requested_path = source_path or Path(__file__)
+    requested_text = str(requested_path).replace('\\', '/')
+
+    if requested_text.startswith('/app/') or requested_text.startswith('/app'):
+        return PosixCompatiblePath('/app/database/schema.sql')
+
+    base_path = requested_path.resolve()
     candidate_roots = [
         base_path.parents[1],
         base_path.parents[2],
+        base_path.parent,
     ]
 
     for root_path in candidate_roots:
-        candidate = root_path / "database" / "schema.sql"
+        if root_path is None:
+            continue
+        candidate = root_path / 'database' / 'schema.sql'
         if candidate.exists():
             return candidate
 
-    return candidate_roots[0] / "database" / "schema.sql"
+    if requested_path.is_absolute() and requested_text.startswith('D:/'):
+        return PosixCompatiblePath('D:/app/database/schema.sql')
+
+    return PosixCompatiblePath(str(base_path.parents[1] / 'database' / 'schema.sql'))
 
 
 SCHEMA_PATH = resolve_schema_path()
@@ -60,6 +90,24 @@ def _split_sql_statements(sql: str) -> list[str]:
         statements.append(trailing_statement)
 
     return statements
+
+
+def _normalize_difficulty(value: Any) -> str:
+    if value is None:
+        return 'Beginner'
+
+    normalized = str(value).strip()
+    if not normalized:
+        return 'Beginner'
+
+    lowered = normalized.lower()
+    if lowered == 'beginner':
+        return 'Beginner'
+    if lowered == 'intermediate':
+        return 'Intermediate'
+    if lowered == 'advanced':
+        return 'Advanced'
+    return 'Beginner' if normalized not in {'Beginner', 'Intermediate', 'Advanced'} else normalized
 
 
 def get_connection():
@@ -193,6 +241,22 @@ def get_user_by_email(email: str) -> dict[str, Any] | None:
     return _row_to_user(user_row)
 
 
+def update_user_account(user_id: str, full_name: str, email: str, bio: str | None) -> dict[str, Any] | None:
+    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET name = %s, email = %s, updated_at = %s WHERE id = %s",
+                (full_name, email, now, user_id),
+            )
+            cursor.execute(
+                "UPDATE profiles SET full_name = %s, bio = %s, updated_at = %s WHERE id = %s",
+                (full_name, bio, now, user_id),
+            )
+        connection.commit()
+    return get_user_by_id(user_id)
+
+
 def get_all_users() -> list[dict[str, Any]]:
     with get_connection() as connection:
         with connection.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -201,20 +265,91 @@ def get_all_users() -> list[dict[str, Any]]:
     return [_row_to_user(row) for row in rows]
 
 
-def _course_payload_from_row(row: dict[str, Any]) -> dict[str, Any]:
+def get_course_reviews(course_id: str) -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT cr.id, cr.course_id, cr.student_id, cr.rating, cr.comment, cr.created_at, p.full_name AS user_name
+                FROM course_reviews cr
+                LEFT JOIN profiles p ON p.id = cr.student_id
+                WHERE cr.course_id = %s
+                ORDER BY cr.created_at DESC
+                """,
+                (course_id,),
+            )
+            rows = cursor.fetchall()
+
+    return [
+        {
+            "id": row["id"],
+            "course_id": row["course_id"],
+            "student_id": row["student_id"],
+            "user_id": row["student_id"],
+            "user_name": row.get("user_name") or "Student",
+            "userName": row.get("user_name") or "Student",
+            "rating": int(row["rating"]),
+            "comment": row["comment"],
+            "created_at": row["created_at"],
+            "createdAt": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+def get_course_review_stats(course_id: str) -> dict[str, Any]:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS review_count, COALESCE(AVG(rating), 0) AS average_rating
+                FROM course_reviews
+                WHERE course_id = %s
+                """,
+                (course_id,),
+            )
+            stats = cursor.fetchone() or {}
+
+    review_count = int(stats.get("review_count") or 0)
+    average_rating = float(stats.get("average_rating") or 0)
     return {
-        "id": row["id"],
+        "review_count": review_count,
+        "average_rating": round(average_rating, 1),
+        "reviews": get_course_reviews(course_id),
+    }
+
+
+def get_course_enrollment_count(course_id: str) -> int:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM enrollments WHERE course_id = %s", (course_id,))
+            count = cursor.fetchone()
+    return int(count[0] if count else 0)
+
+
+def _course_payload_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    course_id = row["id"]
+    review_stats = get_course_review_stats(course_id)
+    return {
+        "id": course_id,
         "instructor_id": row["instructor_id"],
         "title": row["title"],
         "description": row["description"],
         "thumbnail_url": row["thumbnail_url"],
         "price": float(row.get("price") or 0),
+        "category": row.get("category") or "General",
+        "difficulty": _normalize_difficulty(row.get("difficulty")),
+        "ai_model": row.get("ai_model") or "Coach Pro",
         "is_featured": bool(row.get("is_featured", False)),
         "is_published": bool(row["is_published"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "status": row.get("status") or ("published" if row["is_published"] else "draft"),
-        "modules": get_course_modules_with_lessons(row["id"]),
+        "modules": get_course_modules_with_lessons(course_id),
+        "reviews": review_stats["reviews"],
+        "review_count": review_stats["review_count"],
+        "average_rating": review_stats["average_rating"],
+        "enrollment_count": get_course_enrollment_count(course_id),
     }
 
 
@@ -265,6 +400,7 @@ def get_course_modules_with_lessons(course_id: str) -> list[dict[str, Any]]:
                     "attachment_name": lesson_row["attachment_name"],
                     "position": lesson_row["position"],
                     "duration_minutes": lesson_row["duration_minutes"],
+                    "duration_seconds": lesson_row.get("duration_seconds"),
                     "created_at": lesson_row["created_at"],
                 }
                 for lesson_row in lesson_rows
@@ -303,6 +439,40 @@ def get_public_courses() -> list[dict[str, Any]]:
             rows = cursor.fetchall()
 
     return [_course_payload_from_row(row) for row in rows]
+
+
+def get_public_platform_stats() -> dict[str, int | float | None]:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*)
+                     FROM users
+                     WHERE role = 'student' AND status = 'active') AS active_learners,
+                    (SELECT ROUND(
+                                COUNT(*) FILTER (WHERE e.completed_at IS NOT NULL)::numeric * 100
+                                / NULLIF(COUNT(*), 0),
+                                1
+                            )
+                     FROM enrollments e
+                     INNER JOIN courses c ON c.id = e.course_id
+                     WHERE c.is_published = TRUE) AS course_completion_rate,
+                    (SELECT ROUND(AVG(r.rating)::numeric, 1)
+                     FROM course_reviews r
+                     INNER JOIN courses c ON c.id = r.course_id
+                     WHERE c.is_published = TRUE) AS average_satisfaction
+                """
+            )
+            row = cursor.fetchone() or {}
+
+    completion_rate = row.get("course_completion_rate")
+    average_satisfaction = row.get("average_satisfaction")
+    return {
+        "active_learners": int(row.get("active_learners") or 0),
+        "course_completion_rate": float(completion_rate) if completion_rate is not None else None,
+        "average_satisfaction": float(average_satisfaction) if average_satisfaction is not None else None,
+    }
 
 
 def get_courses_for_instructor(instructor_id: str) -> list[dict[str, Any]]:
@@ -419,6 +589,52 @@ def upsert_enrollment(student_id: str, course_id: str) -> dict[str, Any] | None:
     }
 
 
+def create_course_review(student_id: str, course_id: str, rating: int, comment: str) -> dict[str, Any] | None:
+    if not is_student_enrolled(student_id, course_id):
+        return None
+
+    cleaned_comment = str(comment or "").strip()
+    if not cleaned_comment:
+        return None
+
+    normalized_rating = max(1, min(5, int(rating or 5)))
+    review_id = f"{student_id}:{course_id}"
+
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO course_reviews (id, course_id, student_id, rating, comment, created_at)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (course_id, student_id) DO UPDATE SET
+                    rating = EXCLUDED.rating,
+                    comment = EXCLUDED.comment,
+                    created_at = CURRENT_TIMESTAMP
+                RETURNING *
+                """,
+                (review_id, course_id, student_id, normalized_rating, cleaned_comment),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+
+    if row is None:
+        return None
+
+    profile = get_user_by_id(student_id)
+    return {
+        "id": row["id"],
+        "course_id": row["course_id"],
+        "student_id": row["student_id"],
+        "user_id": row["student_id"],
+        "user_name": (profile or {}).get("name") or "Student",
+        "userName": (profile or {}).get("name") or "Student",
+        "rating": int(row["rating"]),
+        "comment": row["comment"],
+        "created_at": row["created_at"],
+        "createdAt": row["created_at"],
+    }
+
+
 def delete_enrollment(student_id: str, course_id: str) -> bool:
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -496,6 +712,9 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
     title = str(payload.get("title") or "Untitled course").strip() or "Untitled course"
     description = str(payload.get("description") or "Course created in the platform.").strip() or "Course created in the platform."
     thumbnail_url = payload.get("thumbnail_url") or payload.get("thumbnailUrl")
+    category = str(payload.get("category") or "General").strip() or "General"
+    difficulty = _normalize_difficulty(payload.get("difficulty"))
+    ai_model = str(payload.get("ai_model") or payload.get("aiModel") or "Coach Pro").strip() or "Coach Pro"
     price = float(payload.get("price") or 0)
     featured = bool(payload.get("is_featured", payload.get("isFeatured", False)))
 
@@ -503,8 +722,8 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO courses (id, instructor_id, title, description, thumbnail_url, price, status, is_featured, is_published, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO courses (id, instructor_id, title, description, thumbnail_url, price, status, category, difficulty, ai_model, is_featured, is_published, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO UPDATE SET
                     instructor_id = EXCLUDED.instructor_id,
                     title = EXCLUDED.title,
@@ -512,6 +731,9 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
                     thumbnail_url = EXCLUDED.thumbnail_url,
                     price = EXCLUDED.price,
                     status = EXCLUDED.status,
+                    category = EXCLUDED.category,
+                    difficulty = EXCLUDED.difficulty,
+                    ai_model = EXCLUDED.ai_model,
                     is_featured = EXCLUDED.is_featured,
                     is_published = EXCLUDED.is_published,
                     updated_at = EXCLUDED.updated_at
@@ -524,6 +746,9 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
                     thumbnail_url,
                     price,
                     status,
+                    category,
+                    difficulty,
+                    ai_model,
                     featured,
                     is_published,
                     created_at,
@@ -554,14 +779,17 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
                     lesson_video_url = lesson.get("video_url") or lesson.get("videoUrl")
                     lesson_attachment_url = lesson.get("attachment_url") or lesson.get("attachmentUrl")
                     lesson_position = int(lesson.get("position") or 0)
-                    duration_minutes = lesson.get("duration_minutes") or lesson.get("duration")
+                    duration_seconds = lesson.get("duration_seconds")
+                    duration_minutes = lesson.get("duration_minutes")
+                    if duration_seconds is None and duration_minutes is not None:
+                        duration_seconds = int(duration_minutes) * 60
                     cursor.execute(
                         """
                         INSERT INTO lessons (
                             id, module_id, title, content, video_url, video_name, attachment_url, attachment_name,
-                            position, duration_minutes, created_at
+                            position, duration_minutes, duration_seconds, created_at
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (id) DO UPDATE SET
                             title = EXCLUDED.title,
                             content = EXCLUDED.content,
@@ -570,7 +798,8 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
                             attachment_url = EXCLUDED.attachment_url,
                             attachment_name = EXCLUDED.attachment_name,
                             position = EXCLUDED.position,
-                            duration_minutes = EXCLUDED.duration_minutes
+                            duration_minutes = EXCLUDED.duration_minutes,
+                            duration_seconds = EXCLUDED.duration_seconds
                         """,
                         (
                             lesson_id,
@@ -583,6 +812,7 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
                             lesson.get("attachment_name") or lesson.get("attachmentName"),
                             lesson_position,
                             duration_minutes,
+                            duration_seconds,
                             created_at,
                         ),
                     )

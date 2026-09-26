@@ -1,8 +1,10 @@
 import { ArrowRight, BookOpenText, Bot, BrainCircuit, Check, ShieldCheck, Sparkles, Stars, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useTranslation, type TranslationKey } from '@/context/I18nContext';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { apiRequest } from '@/services/api';
 
 const features: { icon: typeof BookOpenText; titleKey: TranslationKey; descriptionKey: TranslationKey }[] = [
   {
@@ -28,14 +30,30 @@ const supportedModels = [
   'Gemini 2.0 Flash',
 ];
 
-const stats: { value: string; labelKey: TranslationKey }[] = [
-  { value: '12k+', labelKey: 'landing.activeLearners' },
-  { value: '96%', labelKey: 'landing.completionRate' },
-  { value: '4.9/5', labelKey: 'landing.satisfaction' },
-];
+type PublicPlatformStats = {
+  active_learners: number;
+  course_completion_rate: number | null;
+  average_satisfaction: number | null;
+};
 
 export function LandingPage() {
-  const { t } = useTranslation();
+  const { t, formatNumber } = useTranslation();
+  const [stats, setStats] = useState<PublicPlatformStats | null>(null);
+
+  useEffect(() => {
+    let isCurrent = true;
+    void apiRequest<PublicPlatformStats>('/api/platform/stats')
+      .then((data) => {
+        if (isCurrent) setStats(data);
+      })
+      .catch(() => {
+        if (isCurrent) setStats(null);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 antialiased dark:bg-gray-950 dark:text-white">
@@ -46,7 +64,7 @@ export function LandingPage() {
               L
             </div>
             <div>
-              <div className="text-base font-semibold tracking-tight">LearnFlow AI</div>
+              <div className="text-base font-semibold tracking-tight">Fasl_ai</div>
               <div className="text-[10px] uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
                 {t('landing.learningPlatform')}
               </div>
@@ -94,19 +112,25 @@ export function LandingPage() {
                 </Link>
               </div>
 
-              <div className="mt-10 grid gap-4 sm:grid-cols-3">
-                {stats.map((stat) => (
-                  <div key={stat.labelKey} className="rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900/80">
-                    <div className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</div>
-                    <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t(stat.labelKey)}</div>
-                  </div>
-                ))}
-              </div>
+              {stats && (
+                <div className="mt-10 grid gap-4 sm:grid-cols-3">
+                  {([
+                    { value: formatNumber(stats.active_learners), labelKey: 'landing.activeLearners' },
+                    { value: stats.course_completion_rate === null ? '—' : `${formatNumber(stats.course_completion_rate)}%`, labelKey: 'landing.completionRate' },
+                    { value: stats.average_satisfaction === null ? '—' : `${formatNumber(stats.average_satisfaction)}/5`, labelKey: 'landing.satisfaction' },
+                  ] as { value: string; labelKey: TranslationKey }[]).map((stat) => (
+                    <div key={stat.labelKey} className="rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900/80">
+                      <div className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</div>
+                      <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t(stat.labelKey)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="relative">
-              <div className="absolute -left-8 top-10 h-24 w-24 rounded-full bg-primary-400/20 blur-3xl dark:bg-primary-500/20" />
-              <div className="absolute -right-4 bottom-0 h-28 w-28 rounded-full bg-violet-400/20 blur-3xl dark:bg-violet-500/20" />
+              <div className="absolute -start-8 top-10 h-24 w-24 rounded-full bg-primary-400/20 blur-3xl dark:bg-primary-500/20" />
+              <div className="absolute -end-4 bottom-0 h-28 w-28 rounded-full bg-violet-400/20 blur-3xl dark:bg-violet-500/20" />
 
               <div className="relative overflow-hidden rounded-[28px] border border-gray-200 bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.12)] dark:border-gray-800 dark:bg-gray-950">
                 <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900">
@@ -239,7 +263,7 @@ export function LandingPage() {
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-8 text-sm text-gray-500 dark:text-gray-400 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div className="flex items-center gap-2 font-medium text-gray-700 dark:text-gray-200">
             <Check className="h-4 w-4 text-emerald-500" />
-            LearnFlow AI
+            Fasl_ai
           </div>
           <div>{t('landing.designedForTeams')}</div>
         </div>

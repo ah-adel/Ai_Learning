@@ -1,4 +1,5 @@
 import type { AdminCourse } from '@/lib/adminCourseRepository';
+import { localizedRuntimeError } from '@/lib/errorMessages';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
@@ -28,7 +29,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = typeof payload.detail === 'object' ? payload.detail?.error : payload.detail;
-    throw new Error(payload.error ?? detail ?? 'Instructor administration request failed.');
+    throw new Error(localizedRuntimeError(new Error(payload.error ?? detail ?? 'Instructor administration request failed.')));
   }
   return (payload.data ?? payload) as T;
 }

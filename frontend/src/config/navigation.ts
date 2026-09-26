@@ -21,7 +21,13 @@ export const NAV_ITEMS: NavItem[] = [
     labelKey: 'dashboard',
     path: '/dashboard',
     icon: LayoutDashboard,
-    roles: ['student', 'instructor', 'admin'],
+    roles: ['student', 'instructor'],
+  },
+  {
+    labelKey: 'dashboard',
+    path: '/admin',
+    icon: LayoutDashboard,
+    roles: ['admin'],
   },
   {
     labelKey: 'myCourses',
@@ -43,7 +49,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     labelKey: 'courses',
-    path: '/dashboard/admin/courses',
+    path: '/admin/courses',
     icon: BookOpen,
     roles: ['admin'],
   },

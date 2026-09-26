@@ -1,5 +1,6 @@
 {
-  "name": "vite-react-typescript-starter",
+  "name": "fasl_ai",
+  "description": "Fasl_ai learning platform for students, instructors, and administrators.",
   "private": true,
   "version": "0.0.0",
   "type": "module",

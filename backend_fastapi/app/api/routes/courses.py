@@ -7,12 +7,14 @@ from pydantic import BaseModel, Field
 
 from app.db import (
     create_course_record,
+    create_course_review,
     delete_course_record,
     delete_enrollment,
     get_all_courses,
     get_course_by_id,
     get_courses_for_instructor,
     get_public_courses,
+    get_public_platform_stats,
     get_student_enrolled_courses,
     is_student_enrolled,
     get_user_by_id,
@@ -33,6 +35,7 @@ class CourseLessonInput(BaseModel):
     attachment_name: str | None = None
     position: int = Field(default=0, ge=0)
     duration_minutes: int | None = Field(default=None, ge=0)
+    duration_seconds: int | None = Field(default=None, ge=0)
 
 
 class CourseModuleInput(BaseModel):
@@ -48,9 +51,17 @@ class CourseCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: str = Field(..., min_length=1, max_length=5000)
     thumbnail_url: str | None = None
+    category: str | None = Field(default='General', min_length=1, max_length=200)
+    difficulty: str | None = Field(default='Beginner', min_length=1, max_length=30)
+    ai_model: str | None = Field(default='Coach Pro', min_length=1, max_length=200)
     status: str | None = Field(default=None, min_length=1, max_length=20)
     is_published: bool | None = Field(default=None, description="Whether the course should be published immediately.")
     modules: list[CourseModuleInput] = Field(default_factory=list)
+
+
+class CourseReviewRequest(BaseModel):
+    rating: int = Field(..., ge=1, le=5, description="Course rating from one to five stars.")
+    comment: str = Field(..., min_length=1, max_length=2000, description="Review comment submitted by the enrolled student.")
 
 
 def _get_current_user(authorization: str | None) -> dict[str, Any] | None:
@@ -76,6 +87,18 @@ async def list_public_courses() -> ApiSuccessResponse[list[dict[str, Any]]]:
     return ApiSuccessResponse(
         data=courses,
         message="Published courses retrieved successfully.",
+    )
+
+
+@router.get(
+    "/platform/stats",
+    response_model=ApiSuccessResponse[dict[str, int | float | None]],
+    status_code=status.HTTP_200_OK,
+)
+async def get_platform_stats() -> ApiSuccessResponse[dict[str, int | float | None]]:
+    return ApiSuccessResponse(
+        data=get_public_platform_stats(),
+        message="Public platform statistics retrieved successfully.",
     )
 
 
@@ -151,6 +174,28 @@ async def list_student_courses(authorization: str | None = Header(default=None, 
 
     data = get_student_enrolled_courses(current_user["id"]) if current_user.get("role") == "student" else get_all_courses()
     return ApiSuccessResponse(data=data, message="Student course list retrieved successfully.")
+
+
+@router.post(
+    "/courses/{course_id}/reviews",
+    response_model=ApiSuccessResponse[dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    responses={401: {"model": ApiErrorResponse}, 403: {"model": ApiErrorResponse}, 404: {"model": ApiErrorResponse}},
+)
+async def submit_course_review(course_id: str, payload: CourseReviewRequest, authorization: str | None = Header(default=None, alias="Authorization")) -> ApiSuccessResponse[dict[str, Any]]:
+    current_user = _get_current_user(authorization)
+    if current_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Authentication required."})
+    if current_user.get("role") != "student":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "Student access required."})
+    if not is_student_enrolled(current_user["id"], course_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "Only enrolled students can review a course."})
+
+    review = create_course_review(current_user["id"], course_id, payload.rating, payload.comment)
+    if review is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"error": "Review could not be saved."})
+
+    return ApiSuccessResponse(data=review, message="Course review submitted successfully.")
 
 
 @router.post(
@@ -230,6 +275,9 @@ async def create_course(payload: CourseCreateRequest, authorization: str | None 
         "title": payload.title,
         "description": payload.description,
         "thumbnail_url": payload.thumbnail_url,
+        "category": payload.category or "General",
+        "difficulty": payload.difficulty or "Beginner",
+        "ai_model": payload.ai_model or "Coach Pro",
         "is_published": publish_flag,
         "status": normalized_status,
         "modules": [module.model_dump(mode="python") for module in payload.modules],
@@ -263,6 +311,7 @@ async def update_course(course_id: str, payload: CourseCreateRequest, authorizat
     updated_payload = payload.model_dump(mode="python")
     updated_payload["id"] = course_id
     updated_payload["instructor_id"] = existing_course["instructor_id"]
+    updated_payload["difficulty"] = updated_payload.get("difficulty") or existing_course.get("difficulty") or "Beginner"
     updated_course = create_course_record(updated_payload)
     return ApiSuccessResponse(data=updated_course, message="Course updated successfully.")
 

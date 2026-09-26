@@ -30,6 +30,7 @@ services:
       HOST: 0.0.0.0
       PORT: 8005
       WORKERS: 2
+      APP_NAME: ${APP_NAME:-Fasl_ai}
       AI_SERVICE_URL: http://ai-service:8001
       ENVIRONMENT: docker
       PYTHONPATH: /app

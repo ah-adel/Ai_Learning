@@ -68,12 +68,15 @@ type ModuleDraft = {
   lessons: LessonDraft[];
 };
 
+type CourseDifficulty = 'Beginner' | 'Intermediate' | 'Advanced';
+
 type CourseDraft = {
   id: string;
   title: string;
   description: string;
   category: CourseCategory;
   aiModel: string;
+  difficulty: CourseDifficulty;
   status: CourseStatus;
   modules: ModuleDraft[];
 };
@@ -268,6 +271,7 @@ const emptyDraft = (): CourseDraft => ({
   description: '',
   category: 'Design',
   aiModel: aiModelOptions[0],
+  difficulty: 'Beginner',
   status: 'Published',
   modules: [
     {
@@ -288,12 +292,13 @@ const emptyDraft = (): CourseDraft => ({
   ],
 });
 
-const buildDraftFromCourse = (course: Partial<CourseDraft> & { id: string; title: string; description: string; category: string; aiModel?: string; status?: CourseStatus; modules?: ModuleDraft[]; }): CourseDraft => ({
+const buildDraftFromCourse = (course: Partial<CourseDraft> & { id: string; title: string; description: string; category: string; aiModel?: string; difficulty?: CourseDifficulty; status?: CourseStatus; modules?: ModuleDraft[]; }): CourseDraft => ({
   id: course.id,
   title: course.title ?? '',
   description: course.description ?? '',
   category: course.category ?? 'Design',
   aiModel: course.aiModel ?? aiModelOptions[0],
+  difficulty: course.difficulty ?? 'Beginner',
   status: course.status ?? 'Draft',
   modules: (course.modules ?? []).map((module) => ({
     ...module,
@@ -799,7 +804,8 @@ export function InstructorDashboardPage() {
         status: draft.status.toLowerCase() as 'draft' | 'published' | 'review',
         thumbnail: null,
         aiModel: draft.aiModel?.trim() || 'Coach Pro',
-        difficulty: 'Beginner',
+        difficulty: draft.difficulty || 'Beginner',
+        reviews: [],
         isPublished: draft.status === 'Published',
         createdAt: new Date().toISOString(),
         modules: normalizedModules.map((module) => ({
@@ -812,11 +818,9 @@ export function InstructorDashboardPage() {
       };
 
       const isExistingCourse = courses.some((course) => course.id === nextCourseRecord.id);
-      const saveCourse = isExistingCourse ? updateCourseForInstructor : createCourseForInstructor;
-      await saveCourse(nextCourseRecord, session.userId);
-
-      const savedCourses = await fetchInstructorCourses(session.userId);
-      const uniqueCourses = Array.from(new Map(savedCourses.map((course) => [course.id, course])).values());
+      const savedCourse = await (isExistingCourse ? updateCourseForInstructor : createCourseForInstructor)(nextCourseRecord, session.userId);
+      const refreshedCourses = await fetchInstructorCourses(session.userId);
+      const uniqueCourses = Array.from(new Map(refreshedCourses.map((course) => [course.id, course])).values());
       setCourses(
         uniqueCourses.map((course) => ({
           id: course.id,
@@ -824,6 +828,7 @@ export function InstructorDashboardPage() {
           description: course.description,
           category: course.category,
           aiModel: course.aiModel ?? 'Coach Pro',
+          difficulty: course.difficulty ?? 'Beginner',
           status: course.isPublished ? 'Published' : 'Draft',
           students: 0,
           completion: 0,
@@ -831,6 +836,13 @@ export function InstructorDashboardPage() {
           modules: course.modules ?? [],
         })),
       );
+
+      if (savedCourse?.difficulty) {
+        setDraft((current) => ({
+          ...current,
+          difficulty: savedCourse.difficulty,
+        }));
+      }
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('learnflow-course-changed', {
@@ -968,7 +980,7 @@ export function InstructorDashboardPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left">
+            <table className="min-w-full text-start">
               <thead className="bg-gray-50 text-xs uppercase tracking-[0.12em] text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
                 <tr>
                   <th className="px-5 py-3">{t('instructorDashboard.course')}</th>
@@ -977,7 +989,7 @@ export function InstructorDashboardPage() {
                   <th className="px-5 py-3">{t('instructorDashboard.students')}</th>
                   <th className="px-5 py-3">{t('instructorDashboard.completion')}</th>
                   <th className="px-5 py-3">{t('instructorDashboard.revenue')}</th>
-                  <th className="px-5 py-3 text-right">{t('instructorDashboard.actions')}</th>
+                  <th className="px-5 py-3 text-end">{t('instructorDashboard.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1202,19 +1214,32 @@ export function InstructorDashboardPage() {
                     </div>
 
                     <div>
-                      <label className="label-text">AI model assignment</label>
+                      <label className="label-text">Difficulty</label>
                       <select
-                        value={draft.aiModel}
-                        onChange={(event) => updateDraft('aiModel', event.target.value)}
+                        value={draft.difficulty}
+                        onChange={(event) => updateDraft('difficulty', event.target.value as CourseDifficulty)}
                         className="input-field"
                       >
-                        {aiModelOptions.map((model) => (
-                          <option key={model} value={model}>
-                            {model}
-                          </option>
-                        ))}
+                        <option value="Beginner">Beginner</option>
+                        <option value="Intermediate">Intermediate</option>
+                        <option value="Advanced">Advanced</option>
                       </select>
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="label-text">AI model assignment</label>
+                    <select
+                      value={draft.aiModel}
+                      onChange={(event) => updateDraft('aiModel', event.target.value)}
+                      className="input-field"
+                    >
+                      {aiModelOptions.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               )}
@@ -1417,7 +1442,7 @@ export function InstructorDashboardPage() {
                                       target.value = '';
                                     }}
                                     onChange={(event) => handleLessonVideoUpload(moduleIndex, lessonIndex, event)}
-                                    className="block w-full text-xs text-gray-600 file:mr-3 file:rounded-full file:border-0 file:bg-primary-600 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-primary-700 dark:text-gray-300"
+                                    className="block w-full text-xs text-gray-600 file:me-3 file:rounded-full file:border-0 file:bg-primary-600 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-primary-700 dark:text-gray-300"
                                   />
                                 </label>
 
@@ -1431,7 +1456,7 @@ export function InstructorDashboardPage() {
                                       target.value = '';
                                     }}
                                     onChange={(event) => handleLessonAttachmentUpload(moduleIndex, lessonIndex, event)}
-                                    className="block w-full text-xs text-gray-600 file:mr-3 file:rounded-full file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-violet-700 dark:text-gray-300"
+                                    className="block w-full text-xs text-gray-600 file:me-3 file:rounded-full file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-violet-700 dark:text-gray-300"
                                   />
                                 </label>
                               </div>

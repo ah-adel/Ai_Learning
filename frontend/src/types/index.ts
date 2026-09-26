@@ -8,6 +8,17 @@ export interface User {
   avatar?: string | null;
 }
 
+export type CourseDifficulty = 'Beginner' | 'Intermediate' | 'Advanced';
+
+export type CourseReview = {
+  id: string;
+  userId: string;
+  userName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+};
+
 export interface Course {
   id: string;
   title: string;
@@ -17,6 +28,8 @@ export interface Course {
   category: string;
   status: 'draft' | 'published' | 'review' | 'Draft' | 'Published' | 'Review';
   thumbnail?: string | null;
+  difficulty?: CourseDifficulty;
+  reviews?: CourseReview[];
   createdAt: string;
 }
 

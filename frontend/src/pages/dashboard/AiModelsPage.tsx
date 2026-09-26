@@ -171,12 +171,12 @@ export function AiModelsPage() {
                 <div>
                   <label className="label-text">{t('ai.apiKey')}</label>
                   <div className="relative">
-                    <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <KeyRound className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                     <input
                       type="password"
                       value={model.apiKey}
                       onChange={(event) => updateModel(model.id, 'apiKey', event.target.value)}
-                      className="input-field pl-10"
+                      className="input-field ps-10"
                       placeholder={t('ai.apiKeyPlaceholder')}
                     />
                   </div>

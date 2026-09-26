@@ -27,7 +27,7 @@ type CourseRow = {
 export function CoursesPage() {
   const navigate = useNavigate();
   const { session, profile } = useAuth();
-  const { t } = useTranslation();
+  const { t, direction } = useTranslation();
   const [courses, setCourses] = useState<CourseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +38,7 @@ export function CoursesPage() {
 
     const course = courses.find((item) => item.id === courseId);
     const confirmed = window.confirm(
-      course ? `Cancel your enrollment in "${course.title}"?` : 'Cancel this enrollment?',
+      course ? t('students.cancelEnrollment', { name: course.title }) : t('students.unenroll'),
     );
 
     if (!confirmed) return;
@@ -89,7 +89,7 @@ export function CoursesPage() {
           title: course.title,
           description: course.description,
           category: course.category,
-          instructorName: instructor?.profile.full_name ?? 'Instructor',
+          instructorName: instructor?.profile.full_name ?? t('courses.instructor'),
           progress: enrollment?.progress ?? 0,
           status: enrollment?.status ?? 'active',
           lessonsCount: course.modules?.reduce((sum, module) => sum + module.lessons.length, 0) ?? 0,
@@ -155,7 +155,7 @@ export function CoursesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" dir={direction}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
@@ -268,14 +268,14 @@ export function CoursesPage() {
                       className="btn-secondary flex-1 justify-center"
                       onClick={() => navigate(`/instructor?editCourse=${encodeURIComponent(course.id)}`)}
                     >
-                      Edit
+                      {t('courses.edit')}
                     </button>
                     <button
                       type="button"
                       className="btn-primary flex-1 justify-center"
                       onClick={() => navigate(`/courses/${course.id}?preview=1`)}
                     >
-                      View
+                      {t('students.view')}
                     </button>
                   </div>
                 ) : (
@@ -285,14 +285,14 @@ export function CoursesPage() {
                       className="btn-secondary flex-1 justify-center"
                       onClick={() => navigate(`/courses/${course.id}?resume=1`)}
                     >
-                      Resume
+                      {t('students.resume')}
                     </button>
                     <button
                       type="button"
                       className="btn-primary flex-1 justify-center"
                       onClick={() => navigate(`/courses/${course.id}`)}
                     >
-                      View
+                      {t('students.view')}
                     </button>
                   </div>
                 )}
@@ -303,7 +303,7 @@ export function CoursesPage() {
                     className="mt-3 w-full justify-center border border-red-200 bg-white text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:bg-transparent dark:text-red-300 dark:hover:bg-red-950/30"
                     onClick={() => handleUnenroll(course.id)}
                   >
-                    Unenroll
+                    {t('students.unenroll')}
                   </button>
                 ) : null}
               </div>

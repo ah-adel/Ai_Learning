@@ -78,6 +78,7 @@ export default {
         'slide-in-right': 'slideInRight 0.3s ease-out',
         'scale-in': 'scaleIn 0.2s ease-out',
         'shimmer': 'shimmer 2s infinite linear',
+        'ping-once': 'pingOnce 0.7s ease-out',
       },
       keyframes: {
         fadeIn: {
@@ -100,8 +101,18 @@ export default {
           '0%': { backgroundPosition: '-200% 0' },
           '100%': { backgroundPosition: '200% 0' },
         },
+        pingOnce: {
+          '0%': { opacity: '0', transform: 'scale(0.7)' },
+          '35%': { opacity: '1', transform: 'scale(1)' },
+          '100%': { opacity: '0', transform: 'scale(1.12)' },
+        },
       },
     },
   },
-  plugins: [],
+  plugins: [
+    function rtlVariant({ addVariant }) {
+      addVariant('rtl', ['[dir="rtl"] &']);
+      addVariant('ltr', ['[dir="ltr"] &']);
+    },
+  ],
 };

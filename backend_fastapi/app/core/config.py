@@ -10,7 +10,7 @@ def _env_path(name: str, default: str) -> Path:
 
 
 class Settings(BaseModel):
-    app_name: str = Field(default="Async Catalog API")
+    app_name: str = Field(default_factory=lambda: os.getenv("APP_NAME", "Fasl_ai"))
     debug: bool = Field(default=False)
     host: str = Field(default="0.0.0.0")
     port: int = Field(default=8000)

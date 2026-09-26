@@ -6,8 +6,8 @@ from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Query, status
 
-from app.db import create_user_record, get_all_users, get_profile_by_user_id, get_user_by_email, get_user_by_id
-from app.schemas.auth import SignInRequest, SignUpRequest
+from app.db import create_user_record, get_all_users, get_profile_by_user_id, get_user_by_email, get_user_by_id, update_user_account
+from app.schemas.auth import AccountProfileUpdate, SignInRequest, SignUpRequest
 from app.schemas.common import ApiErrorResponse, ApiSuccessResponse
 
 router = APIRouter()
@@ -132,6 +132,38 @@ async def get_me(user_id: str = Query(..., min_length=1, description="User ID to
             "profile": profile,
         },
         message="Profile loaded successfully.",
+    )
+
+
+@router.patch(
+    "/auth/profile",
+    response_model=ApiSuccessResponse[dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    responses={401: {"model": ApiErrorResponse}, 404: {"model": ApiErrorResponse}, 409: {"model": ApiErrorResponse}},
+)
+async def update_profile(
+    payload: AccountProfileUpdate,
+    user_id: str = Query(..., min_length=1),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> ApiSuccessResponse[dict[str, Any]]:
+    token = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
+    if token != user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Authentication required."})
+
+    existing_email_owner = get_user_by_email(payload.email)
+    if existing_email_owner is not None and existing_email_owner["id"] != user_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"error": "An account with that email already exists."})
+
+    user = update_user_account(user_id, payload.full_name, payload.email, payload.bio)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "User not found."})
+
+    return ApiSuccessResponse(
+        data={
+            "user": {"id": user["id"], "email": user["email"], "role": user["role"]},
+            "profile": _profile_payload(user),
+        },
+        message="Profile updated successfully.",
     )
 
 

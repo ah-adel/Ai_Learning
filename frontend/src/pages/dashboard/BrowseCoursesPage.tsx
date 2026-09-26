@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Clock3, Filter, Search, Star, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useI18n } from '@/context/I18nContext';
+import { useScrollLock } from '@/hooks/useScrollLock';
 import { enrollStudentInCourse, fetchPublishedCourses } from '@/lib/courseRepository';
 import { EmptyState } from '@/components/ui/EmptyState';
 import {
@@ -22,6 +24,14 @@ type CatalogCourse = {
   duration: string;
   lessons: number;
   rating: number;
+  reviewCount: number;
+  reviews: Array<{
+    id: string;
+    userName: string;
+    rating: number;
+    comment: string;
+    createdAt: string;
+  }>;
   students: string;
   instructor: string;
   description: string;
@@ -65,6 +75,7 @@ function formatLearnerCount(count: number): string {
 
 export function BrowseCoursesPage() {
   const { session } = useAuth();
+  const { t, direction } = useI18n();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<(typeof categories)[number]>('All');
   const [selectedDifficulty, setSelectedDifficulty] = useState<(typeof difficulties)[number]>('All');
@@ -72,6 +83,8 @@ export function BrowseCoursesPage() {
   const [catalogCourses, setCatalogCourses] = useState<CatalogCourse[]>([]);
   const [enrolledIds, setEnrolledIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  useScrollLock(Boolean(selectedCourse));
 
   useEffect(() => {
     if (!session?.userId) {
@@ -96,6 +109,8 @@ export function BrowseCoursesPage() {
           const instructor = users.find((user) => user.id === course.instructorId);
           const lessonCount = course.modules?.reduce((total, module) => total + module.lessons.length, 0) ?? 0;
           const learnerCount = enrollments.filter((entry) => entry.courseId === course.id).length;
+          const courseAverageRating = Number(course.averageRating ?? 0);
+          const courseReviewCount = Number(course.reviewCount ?? course.reviews?.length ?? 0);
 
           return {
             id: course.id,
@@ -104,8 +119,16 @@ export function BrowseCoursesPage() {
             difficulty: (course.difficulty ?? 'Beginner') as CourseDifficulty,
             duration: formatCourseDuration(course),
             lessons: lessonCount,
-            rating: 4.8,
-            students: formatLearnerCount(learnerCount),
+            rating: Number(courseAverageRating),
+            reviewCount: courseReviewCount,
+            reviews: (course.reviews ?? []).slice(0, 3).map((review) => ({
+              id: review.id,
+              userName: review.userName || 'Student',
+              rating: Number(review.rating ?? 5),
+              comment: review.comment || 'No comment provided.',
+              createdAt: review.createdAt || new Date().toISOString(),
+            })),
+            students: formatLearnerCount(course.enrollmentCount ?? learnerCount),
             instructor: instructor?.profile.full_name ?? 'Verified instructor',
             description: course.description,
             outcomes: [
@@ -207,14 +230,14 @@ export function BrowseCoursesPage() {
   };
 
   return (
-    <div className="animate-fade-in-up space-y-6">
+    <div className="animate-fade-in-up space-y-6" dir={direction}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
-            Explore learning
+            {t('browse.exploreLearning')}
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-            Browse Courses
+            {t('browse.title')}
           </h1>
         </div>
 
@@ -223,7 +246,7 @@ export function BrowseCoursesPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search courses or instructors"
+            placeholder={t('browse.searchPlaceholder')}
             className="w-full border-0 bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none dark:text-white"
           />
         </div>
@@ -232,13 +255,13 @@ export function BrowseCoursesPage() {
       <div className="card p-5">
         <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
           <Filter className="h-4 w-4 text-primary-500" />
-          Filters
+          {t('browse.filters')}
         </div>
 
         <div className="mt-4 space-y-4">
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-              Category
+              {t('browse.category')}
             </p>
             <div className="flex flex-wrap gap-2">
               {categories.map((category) => (
@@ -259,7 +282,7 @@ export function BrowseCoursesPage() {
 
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-              Difficulty
+              {t('browse.difficulty')}
             </p>
             <div className="flex flex-wrap gap-2">
               {difficulties.map((level) => (
@@ -282,7 +305,7 @@ export function BrowseCoursesPage() {
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          Showing <span className="font-semibold text-gray-900 dark:text-white">{filteredCourses.length}</span> courses
+          {t('browse.showing', { count: filteredCourses.length })}
         </p>
       </div>
 
@@ -332,7 +355,8 @@ export function BrowseCoursesPage() {
                   <span>{course.instructor}</span>
                   <span className="flex items-center gap-1">
                     <Star className="h-3.5 w-3.5 fill-warning-400 text-warning-400" />
-                    {course.rating}
+                    {course.rating.toFixed(1)}
+                    <span className="text-[11px] text-gray-400">({course.reviewCount})</span>
                   </span>
                 </div>
 
@@ -349,13 +373,13 @@ export function BrowseCoursesPage() {
                     onClick={() => setSelectedCourse(course)}
                     className="btn-secondary flex-1 justify-center"
                   >
-                    Preview
+                    {t('browse.preview')}
                   </button>
                   <button
                     onClick={() => handleEnroll(course.id)}
                     className={`flex-1 justify-center ${isEnrolled ? 'btn-secondary' : 'btn-primary'}`}
                   >
-                    {isEnrolled ? 'Enrolled' : 'Enroll'}
+                    {isEnrolled ? t('browse.enrolled') : t('browse.enroll')}
                   </button>
                 </div>
               </div>
@@ -366,22 +390,22 @@ export function BrowseCoursesPage() {
       ) : (
         <EmptyState
           icon={<BookOpen className="h-7 w-7" />}
-          title="No courses found"
-          description="There are no published courses matching your current search and filters."
+          title={t('browse.noCoursesFound')}
+          description={t('browse.noCoursesDescription')}
           action={(
             <button type="button" onClick={clearFilters} className="btn-primary">
-              Clear filters
+              {t('browse.clearFilters')}
             </button>
           )}
         />
       )}
 
       {selectedCourse && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm" style={{ overscrollBehavior: 'contain' }}>
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
             <div className={`h-32 bg-gradient-to-br ${selectedCourse.accent}`} />
 
-            <div className="p-6">
+            <div className="max-h-[calc(90vh-8rem)] overflow-y-auto p-6 overscroll-contain">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
@@ -397,7 +421,7 @@ export function BrowseCoursesPage() {
                 <button
                   onClick={() => setSelectedCourse(null)}
                   className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                  aria-label="Close preview"
+                  aria-label={t('browse.closePreview')}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -406,16 +430,47 @@ export function BrowseCoursesPage() {
               <div className="mt-5 flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                 <span>{selectedCourse.instructor}</span>
                 <span>{selectedCourse.duration}</span>
-                <span>{selectedCourse.lessons} lessons</span>
+                <span>{selectedCourse.lessons} {t('browse.lessons')}</span>
                 <span className="flex items-center gap-1">
                   <Star className="h-3.5 w-3.5 fill-warning-400 text-warning-400" />
-                  {selectedCourse.rating} rating
+                  {selectedCourse.rating.toFixed(1)}
+                  <span className="text-xs text-gray-500 dark:text-gray-400">({selectedCourse.reviewCount} {selectedCourse.reviewCount === 1 ? 'review' : 'reviews'})</span>
                 </span>
               </div>
 
               <p className="mt-5 text-sm leading-6 text-gray-600 dark:text-gray-300">
                 {selectedCourse.description}
               </p>
+
+              <div className="mt-6 border-t border-gray-200 pt-5 dark:border-gray-800">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">{t('courseDetail.studentFeedback')}</p>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{selectedCourse.reviewCount} {t('browse.rating')}</span>
+                </div>
+
+                {selectedCourse.reviews.length > 0 ? (
+                  <div className="space-y-3">
+                    {selectedCourse.reviews.map((review) => (
+                      <div key={review.id} className="rounded-2xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/60">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white">{review.userName}</p>
+                            <p className="text-[10px] text-gray-500 dark:text-gray-400">{new Date(review.createdAt).toLocaleDateString()}</p>
+                          </div>
+                          <div className="flex items-center gap-1 text-amber-500">
+                            {Array.from({ length: 5 }).map((_, index) => (
+                              <Star key={`${review.id}-${index}`} className={`h-3.5 w-3.5 ${index < review.rating ? 'fill-current' : 'text-gray-300 dark:text-gray-600'}`} />
+                            ))}
+                          </div>
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">{review.comment}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{t('courseDetail.noReviewsYet')}</p>
+                )}
+              </div>
 
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 {selectedCourse.outcomes.map((outcome) => (
@@ -431,7 +486,7 @@ export function BrowseCoursesPage() {
               <div className="mt-6 flex items-center justify-between gap-3 border-t border-gray-200 pt-5 dark:border-gray-800">
                 <div>
                   <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-                    Learners
+                    {t('browse.learners')}
                   </p>
                   <p className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
                     {selectedCourse.students}
@@ -445,7 +500,7 @@ export function BrowseCoursesPage() {
                   }}
                   className={enrolledIds.includes(selectedCourse.id) ? 'btn-secondary' : 'btn-primary'}
                 >
-                  {enrolledIds.includes(selectedCourse.id) ? 'Enrolled' : 'Enroll now'}
+                  {enrolledIds.includes(selectedCourse.id) ? t('browse.enrolled') : t('browse.enrollNow')}
                 </button>
               </div>
             </div>

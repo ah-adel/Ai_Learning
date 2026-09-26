@@ -11,14 +11,15 @@ export default defineConfig({
     },
   },
   server: {
+    allowedHosts: true,
     host: '0.0.0.0',
     port: 5173,
     watch: {
       ignored: ['**/backend_fastapi/uploads/**'],
     },
     proxy: {
-      '/api': 'http://localhost:8005',
-      '/uploads': 'http://localhost:8005',
+      '/api': 'http://127.0.0.1:8005',
+      '/uploads': 'http://127.0.0.1:8005',
     },
   },
   optimizeDeps: {

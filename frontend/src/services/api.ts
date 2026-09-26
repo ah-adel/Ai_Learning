@@ -1,3 +1,5 @@
+import { localizedRuntimeError } from '@/lib/errorMessages';
+
 export type ApiSuccessResponse<T> = {
   success: true;
   data: T;
@@ -51,7 +53,7 @@ async function parseApiResponse<T>(response: Response): Promise<T> {
     ? payload.error
     : `Request failed with status ${response.status}`;
 
-  throw new Error(errorMessage);
+  throw new Error(localizedRuntimeError(new Error(errorMessage), errorMessage));
 }
 
 export async function apiRequest<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -85,13 +87,13 @@ export async function uploadMediaFile(
 
     if (options?.signal) {
       if (options.signal.aborted) {
-        reject(new DOMException('Upload aborted', 'AbortError'));
+        reject(new Error(localizedRuntimeError(new DOMException('Upload aborted', 'AbortError'))));
         return;
       }
 
       options.signal.addEventListener('abort', () => {
         xhr.abort();
-        reject(new DOMException('Upload aborted', 'AbortError'));
+        reject(new Error(localizedRuntimeError(new DOMException('Upload aborted', 'AbortError'))));
       }, { once: true });
     }
 
@@ -148,7 +150,7 @@ export async function uploadMediaFile(
 
     xhr.addEventListener('error', () => {
       console.error('Network error during media upload:', { url: targetUrl, status: xhr.status, readyState: xhr.readyState });
-      reject(new Error('Unable to upload media.'));
+      reject(new Error(localizedRuntimeError(new Error('Unable to upload media.'))));
     });
 
     xhr.addEventListener('abort', () => {

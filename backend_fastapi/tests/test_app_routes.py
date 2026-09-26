@@ -17,12 +17,86 @@ def test_schema_path_is_resolved_from_the_app_root() -> None:
     assert not str(resolved).startswith('/database/')
 
 
+def test_course_creation_preserves_explicit_difficulty_and_reviews() -> None:
+    instructor_email = f"difficulty_{uuid.uuid4().hex[:8]}@example.com"
+    instructor = client.post(
+        '/api/auth/sign-up',
+        json={
+            'email': instructor_email,
+            'password': 'Secret123',
+            'full_name': 'Difficulty Instructor',
+            'role': 'instructor',
+        },
+    )
+    assert instructor.status_code == 201, instructor.text
+    instructor_id = instructor.json()['data']['user']['id']
+
+    student_email = f"difficulty_student_{uuid.uuid4().hex[:8]}@example.com"
+    student = client.post(
+        '/api/auth/sign-up',
+        json={
+            'email': student_email,
+            'password': 'Secret123',
+            'full_name': 'Difficulty Student',
+            'role': 'student',
+        },
+    )
+    assert student.status_code == 201, student.text
+    student_id = student.json()['data']['user']['id']
+
+    payload = {
+        'instructor_id': instructor_id,
+        'title': 'Advanced Difficulty Course',
+        'description': 'This course should persist as Advanced difficulty and collect reviews.',
+        'difficulty': 'Advanced',
+        'status': 'published',
+        'is_published': True,
+        'modules': [
+            {'title': 'Module 1', 'lessons': [{'title': 'Lesson 1', 'content': 'Intro', 'video_url': 'https://example.com/video.mp4'}]}
+        ],
+    }
+
+    created = client.post('/api/courses', json=payload, headers={'Authorization': f'Bearer {instructor_id}'})
+    assert created.status_code == 201, created.text
+    created_course = created.json()['data']
+    assert created_course['difficulty'] == 'Advanced', created_course
+
+    enrollment = client.post(f"/api/courses/{created_course['id']}/enroll", headers={'Authorization': f'Bearer {student_id}'})
+    assert enrollment.status_code == 200, enrollment.text
+
+    review = client.post(
+        f"/api/courses/{created_course['id']}/reviews",
+        json={'rating': 5, 'comment': 'Excellent course.'},
+        headers={'Authorization': f'Bearer {student_id}'},
+    )
+    assert review.status_code == 200, review.text
+
+    fetched = client.get(f"/api/courses/{created_course['id']}", headers={'Authorization': f'Bearer {instructor_id}'})
+    assert fetched.status_code == 200, fetched.text
+    fetched_course = fetched.json()['data']
+    assert fetched_course['difficulty'] == 'Advanced', fetched_course
+    assert fetched_course['review_count'] >= 1, fetched_course
+    assert any(review_item['comment'] == 'Excellent course.' for review_item in fetched_course['reviews']), fetched_course
+
+
 def test_health_endpoint_returns_ok() -> None:
     response = client.get('/health')
     assert response.status_code == 200
     payload = response.json()
     assert payload['success'] is True
     assert payload['data']['status'] == 'ok'
+
+
+def test_public_platform_stats_returns_aggregate_values() -> None:
+    response = client.get('/api/platform/stats')
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload['success'] is True
+    stats = payload['data']
+    assert isinstance(stats['active_learners'], int)
+    assert stats['course_completion_rate'] is None or isinstance(stats['course_completion_rate'], (int, float))
+    assert stats['average_satisfaction'] is None or isinstance(stats['average_satisfaction'], (int, float))
 
 
 def test_media_upload_returns_url() -> None:

@@ -66,7 +66,7 @@ export function LessonCreationForm({ onSave }: LessonCreationFormProps) {
           type="file"
           accept="video/*,.mp4,.webm,.ogg,.mov"
           onChange={(event) => handleFileSelection('video', event.target.files?.[0])}
-          className="block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-primary-600 file:px-3 file:py-1.5 file:text-white"
+          className="block w-full text-sm file:me-3 file:rounded-full file:border-0 file:bg-primary-600 file:px-3 file:py-1.5 file:text-white"
         />
       </label>
       {videoError && <p className="text-xs text-red-600">{videoError}</p>}
@@ -78,7 +78,7 @@ export function LessonCreationForm({ onSave }: LessonCreationFormProps) {
           type="file"
           accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.png,.jpg,.jpeg"
           onChange={(event) => handleFileSelection('attachment', event.target.files?.[0])}
-          className="block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-white"
+          className="block w-full text-sm file:me-3 file:rounded-full file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-white"
         />
       </label>
       {attachmentError && <p className="text-xs text-red-600">{attachmentError}</p>}

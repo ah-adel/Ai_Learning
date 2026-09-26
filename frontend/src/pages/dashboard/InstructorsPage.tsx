@@ -23,6 +23,7 @@ import {
 } from '@/lib/localDb';
 import { AdminInstructorsEnhancements } from '@/components/dashboard/AdminInstructorsEnhancements';
 import { useTranslation } from '@/context/I18nContext';
+import { useScrollLock } from '@/hooks/useScrollLock';
 
 type InstructorStatus = 'active' | 'inactive' | 'suspended';
 
@@ -112,6 +113,8 @@ export function InstructorsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<InstructorFormState>(emptyForm());
+
+  useScrollLock(isModalOpen);
 
   const loadInstructors = () => {
     try {
@@ -406,13 +409,13 @@ export function InstructorsPage() {
             </h2>
             <div className="flex flex-col gap-3 sm:flex-row">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
                   type="search"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder={t('instructors.search')}
-                  className="input-field w-full pl-10 sm:w-64"
+                  className="input-field w-full ps-10 sm:w-64"
                 />
               </div>
 
@@ -446,7 +449,7 @@ export function InstructorsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full text-left">
+          <table className="min-w-full text-start">
             <thead className="bg-gray-50 text-xs uppercase tracking-[0.12em] text-gray-500 dark:bg-gray-900/60 dark:text-gray-400">
               <tr>
                 <th className="px-5 py-3">{t('instructors.title')}</th>
@@ -454,7 +457,7 @@ export function InstructorsPage() {
                 <th className="px-5 py-3">{t('students.courses')}</th>
                 <th className="px-5 py-3">{t('common.status')}</th>
                 <th className="px-5 py-3">{t('instructors.joined')}</th>
-                <th className="px-5 py-3 text-right">{t('instructors.actions')}</th>
+                <th className="px-5 py-3 text-end">{t('instructors.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -480,7 +483,7 @@ export function InstructorsPage() {
                     <td className="px-5 py-4">
                       <button
                         type="button"
-                        className="text-left"
+                        className="text-start"
                         onClick={() => setSelectedId(row.id)}
                       >
                         <p className="font-semibold text-gray-900 dark:text-white">{row.name}</p>
@@ -653,9 +656,10 @@ export function InstructorsPage() {
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-            <div className="flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm" style={{ overscrollBehavior: 'contain' }}>
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+            <div className="max-h-[90vh] overflow-y-auto p-6 overscroll-contain">
+              <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
                   {editingId ? 'Edit instructor' : 'Create instructor'}
@@ -673,7 +677,7 @@ export function InstructorsPage() {
               </button>
             </div>
 
-            <form className="mt-6 space-y-5" onSubmit={saveInstructor}>
+              <form className="mt-6 space-y-5" onSubmit={saveInstructor}>
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="label-text">Full name</label>
@@ -808,6 +812,7 @@ export function InstructorsPage() {
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}
