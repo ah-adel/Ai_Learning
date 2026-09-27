@@ -18,6 +18,7 @@ import {
 } from '@/lib/localDb';
 import { fetchAdminCourseInventory, fetchAdminInstructors, createAdminInstructor, deleteAdminInstructor, reassignInstructorCourses, updateAdminInstructor, type AdminInstructor } from '@/lib/adminInstructorRepository';
 import type { AdminCourse } from '@/lib/adminCourseRepository';
+import { getCourseCategoryLabel, getCourseDifficultyLabel } from '@/lib/courseLabels';
 import { errorMessage } from '@/lib/apiError';
 import { AdminInstructorsEnhancements } from '@/components/dashboard/AdminInstructorsEnhancements';
 import { useTranslation } from '@/context/I18nContext';
@@ -120,7 +121,7 @@ export function InstructorsPage() {
       }
     } catch (loadError) {
       console.error('Failed to load instructor records:', loadError);
-      setError(errorMessage(loadError, 'Unable to load instructor records.'));
+      setError(errorMessage(loadError, t('instructors.loadError')));
     } finally {
       setLoading(false);
     }
@@ -196,12 +197,12 @@ export function InstructorsPage() {
     const specialty = form.specialty.trim() || 'General Instruction';
 
     if (!fullName || !email) {
-      setError('Instructor name and email are required.');
+      setError(t('instructors.requiredFields'));
       return;
     }
 
     if (!editingId && form.password.trim().length < 6) {
-      setError('Password must be at least 6 characters.');
+      setError(t('instructors.passwordTooShort'));
       return;
     }
 
@@ -235,7 +236,7 @@ export function InstructorsPage() {
       await loadInstructors();
     } catch (saveError) {
       console.error('Failed to save instructor:', saveError);
-      setError(errorMessage(saveError, 'Unable to save the instructor record.'));
+      setError(errorMessage(saveError, t('instructors.saveError')));
     }
   };
 
@@ -247,7 +248,7 @@ export function InstructorsPage() {
       await loadInstructors();
     } catch (saveError) {
       console.error('Failed to update status:', saveError);
-      setError(errorMessage(saveError, 'Unable to update the instructor status.'));
+      setError(errorMessage(saveError, t('instructors.statusError')));
     }
   };
 
@@ -269,7 +270,7 @@ export function InstructorsPage() {
       await loadInstructors();
     } catch (deleteError) {
       console.error('Failed to delete instructor:', deleteError);
-      setError(errorMessage(deleteError, 'Unable to delete the instructor profile.'));
+      setError(errorMessage(deleteError, t('instructors.deleteError')));
     }
   };
 
@@ -278,7 +279,7 @@ export function InstructorsPage() {
       <div className="flex min-h-[32vh] items-center justify-center">
         <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
-          Loading instructors…
+          {t('instructors.loading')}
         </div>
       </div>
     );
@@ -596,11 +597,11 @@ export function InstructorsPage() {
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">{course.title}</p>
                         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                          {course.category}
+                          {course.category ? getCourseCategoryLabel(course.category, t) : t('courses.generalLearning')}
                         </p>
                       </div>
                       <span className="rounded-full bg-primary-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
-                        {course.difficulty}
+                        {course.difficulty ? getCourseDifficultyLabel(course.difficulty, t) : t('courseBuilder.beginner')}
                       </span>
                     </div>
                   </div>
@@ -618,14 +619,15 @@ export function InstructorsPage() {
               <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
-                  {editingId ? 'Edit instructor' : 'Create instructor'}
+                  {editingId ? t('instructors.modalEdit') : t('instructors.modalCreate')}
                 </p>
                 <h2 className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">
-                  {editingId ? 'Update account details' : 'Register a new instructor'}
+                  {editingId ? t('instructors.modalEditTitle') : t('instructors.modalCreateTitle')}
                 </h2>
               </div>
               <button
                 type="button"
+                aria-label={t('common.close')}
                 onClick={() => setIsModalOpen(false)}
                 className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
               >
@@ -636,67 +638,73 @@ export function InstructorsPage() {
               <form className="mt-6 space-y-5" onSubmit={saveInstructor}>
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <label className="label-text">Full name</label>
+                  <label className="label-text" htmlFor="instructor-full-name">{t('instructors.fullName')}</label>
                   <input
+                    id="instructor-full-name"
                     value={form.fullName}
                     onChange={(event) => updateFormValue('fullName', event.target.value)}
                     className="input-field"
-                    placeholder="Jordan Smith"
+                    placeholder={t('instructors.fullNamePlaceholder')}
                   />
                 </div>
 
                 <div>
-                  <label className="label-text">Email</label>
+                  <label className="label-text" htmlFor="instructor-email">{t('instructors.email')}</label>
                   <input
+                    id="instructor-email"
                     type="email"
                     value={form.email}
                     onChange={(event) => updateFormValue('email', event.target.value)}
                     className="input-field"
-                    placeholder="instructor@learnflow.io"
+                    placeholder={t('instructors.emailPlaceholder')}
                   />
                 </div>
 
                 <div>
-                  <label className="label-text">Specialty</label>
+                  <label className="label-text" htmlFor="instructor-specialty">{t('instructors.specialty')}</label>
                   <input
-                    value={form.specialty}
+                    id="instructor-specialty"
+                    value={formatSpecialty(form.specialty)}
                     onChange={(event) => updateFormValue('specialty', event.target.value)}
                     className="input-field"
-                    placeholder="AI & Automation"
+                    placeholder={t('instructors.specialtyPlaceholder')}
                   />
                 </div>
 
                 <div>
-                  <label className="label-text">Status</label>
+                  <label className="label-text" htmlFor="instructor-status">{t('common.status')}</label>
                   <select
+                    id="instructor-status"
                     value={form.status}
                     onChange={(event) =>
                       updateFormValue('status', event.target.value as InstructorStatus)
                     }
                     className="input-field"
                   >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="suspended">Suspended</option>
+                    <option value="active">{t('common.active')}</option>
+                    <option value="inactive">{t('common.inactive')}</option>
+                    <option value="suspended">{t('common.suspended')}</option>
                   </select>
                 </div>
               </div>
 
               {!editingId && (
                 <div>
-                  <label className="label-text">Initial password</label>
+                  <label className="label-text" htmlFor="instructor-password">{t('instructors.initialPassword')}</label>
                   <input
-                    type="text"
+                    id="instructor-password"
+                    type="password"
                     value={form.password}
                     onChange={(event) => updateFormValue('password', event.target.value)}
                     className="input-field"
-                    placeholder="instructor123"
+                    placeholder={t('instructors.initialPasswordPlaceholder')}
+                    autoComplete="new-password"
                   />
                 </div>
               )}
 
               <div>
-                <label className="label-text">Permissions</label>
+                <label className="label-text">{t('instructorProfile.permissions')}</label>
                 <div className="grid gap-3 sm:grid-cols-3">
                   {Object.entries(form.permissions).map(([key, value]) => (
                     <label
@@ -714,14 +722,14 @@ export function InstructorsPage() {
                         }
                         className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                       />
-                      {key.replace(/([A-Z])/g, ' $1').trim()}
+                      {permissionLabel(key)}
                     </label>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className="label-text">Course assignments</label>
+                <label className="label-text">{t('instructors.courseAssignments')}</label>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {availableCourses.map((course) => (
                     <label
@@ -753,7 +761,7 @@ export function InstructorsPage() {
                     onClick={() => deleteInstructor(editingId)}
                   >
                     <Trash2 className="h-4 w-4" />
-                    Delete
+                    {t('common.delete')}
                   </button>
                 )}
                 <button
@@ -761,10 +769,10 @@ export function InstructorsPage() {
                   className="btn-secondary"
                   onClick={() => setIsModalOpen(false)}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button type="submit" className="btn-primary">
-                  {editingId ? 'Save changes' : 'Create instructor'}
+                  {editingId ? t('common.saveChanges') : t('instructors.create')}
                 </button>
               </div>
             </form>
