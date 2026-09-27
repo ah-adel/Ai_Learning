@@ -1,19 +1,51 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 import logging
 import os
+import secrets
 import sys
 import uuid
 from pathlib import Path
 from typing import Any
 
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import Json, RealDictCursor
 
 from app.core.config import settings
+from app.services.cleanup_service import collect_candidate_urls, collect_entity_media_paths, purge_files, purge_orphaned_files
 
 logger = logging.getLogger(__name__)
+UPLOAD_ROOT = settings.upload_dir
+
+DEFAULT_ADMIN_SETTINGS: dict[str, Any] = {
+    "platform_name": "Fasl_ai",
+    "support_email": "",
+    "currency": "USD",
+    "default_language": "en",
+    "default_theme": "system",
+    "enforce_mfa": False,
+    "jwt_expiration_minutes": 60,
+    "password_min_length": 8,
+    "password_require_uppercase": True,
+    "password_require_number": True,
+    "password_require_symbol": True,
+    "smtp_host": "",
+    "smtp_port": 587,
+    "smtp_username": "",
+    "smtp_password": "",
+    "smtp_from_email": "",
+    "smtp_use_tls": True,
+    "companyName": "Fasl_ai",
+    "siteName": "Fasl_ai",
+    "timezone": "UTC",
+    "allowStudentSignup": True,
+    "requireEmailVerification": False,
+    "autoPublishCourses": False,
+    "performancePlatformReferences": True,
+}
 
 
 class PosixCompatiblePath(type(Path())):
@@ -116,6 +148,108 @@ def get_connection():
     return connection
 
 
+def _fetch_media_urls(connection, query: str, parameters: tuple[Any, ...] = ()) -> list[str]:
+    with connection.cursor() as cursor:
+        cursor.execute(query, parameters)
+        return [str(row[0]) for row in cursor.fetchall() if row and row[0]]
+
+
+def _course_media_urls(connection, course_id: str) -> list[str]:
+    return _fetch_media_urls(
+        connection,
+        """
+        SELECT thumbnail_url FROM courses WHERE id = %s
+        UNION ALL
+        SELECT l.video_url FROM lessons l JOIN course_modules m ON m.id = l.module_id WHERE m.course_id = %s
+        UNION ALL
+        SELECT l.attachment_url FROM lessons l JOIN course_modules m ON m.id = l.module_id WHERE m.course_id = %s
+        """,
+        (course_id, course_id, course_id),
+    )
+
+
+def _user_media_urls(connection, user_id: str) -> list[str]:
+    return _fetch_media_urls(
+        connection,
+        """
+        SELECT avatar FROM users WHERE id = %s
+        UNION ALL
+        SELECT avatar_url FROM profiles WHERE id = %s
+        UNION ALL
+        SELECT c.thumbnail_url FROM courses c WHERE c.instructor_id = %s
+        UNION ALL
+        SELECT l.video_url FROM lessons l
+        JOIN course_modules m ON m.id = l.module_id
+        JOIN courses c ON c.id = m.course_id
+        WHERE c.instructor_id = %s
+        UNION ALL
+        SELECT l.attachment_url FROM lessons l
+        JOIN course_modules m ON m.id = l.module_id
+        JOIN courses c ON c.id = m.course_id
+        WHERE c.instructor_id = %s
+        """,
+        (user_id, user_id, user_id, user_id, user_id),
+    )
+
+
+def _all_referenced_media_urls(connection) -> list[str]:
+    return _fetch_media_urls(
+        connection,
+        """
+        SELECT thumbnail_url FROM courses
+        UNION ALL SELECT video_url FROM lessons
+        UNION ALL SELECT attachment_url FROM lessons
+        UNION ALL SELECT avatar FROM users
+        UNION ALL SELECT avatar_url FROM profiles
+        """,
+    )
+
+
+def _unreferenced_media_paths(connection, candidate_urls: list[str]) -> list[str]:
+    candidates = collect_entity_media_paths(
+        {"files": [{"url": url} for url in candidate_urls]},
+        project_root=UPLOAD_ROOT,
+    )
+    referenced = set(collect_entity_media_paths(
+        {"files": [{"url": url} for url in _all_referenced_media_urls(connection)]},
+        project_root=UPLOAD_ROOT,
+    ))
+    return [path for path in candidates if path not in referenced]
+
+
+def _purge_media_paths(paths: list[str]) -> None:
+    if not paths:
+        return
+    deleted, errors = purge_files(paths, upload_root=UPLOAD_ROOT)
+    if errors:
+        logger.warning("Some unreferenced media files could not be removed: %s", errors)
+    if deleted:
+        logger.info("Removed %s unreferenced media files", len(deleted))
+
+
+def purge_orphaned_uploads() -> dict[str, Any]:
+    with get_connection() as connection:
+        referenced_urls = _all_referenced_media_urls(connection)
+    result = purge_orphaned_files(referenced_urls, upload_root=UPLOAD_ROOT)
+    return {
+        "deleted_count": len(result["deleted_files"]),
+        "error_count": len(result["errors"]),
+    }
+
+
+def cleanup_unreferenced_media(entity: dict[str, Any]) -> dict[str, Any]:
+    candidate_urls = collect_candidate_urls(entity)
+    with get_connection() as connection:
+        paths = _unreferenced_media_paths(connection, candidate_urls)
+    deleted, errors = purge_files(paths, upload_root=UPLOAD_ROOT)
+    return {
+        "entityId": entity.get("id") or entity.get("courseId") or entity.get("lessonId"),
+        "deletedFiles": deleted,
+        "purgedCollections": [],
+        "errors": errors,
+    }
+
+
 def initialize_database() -> None:
     try:
         if not SCHEMA_PATH.exists():
@@ -138,7 +272,44 @@ def initialize_database() -> None:
 
 
 def _normalize_password(value: str) -> str:
-    return value.strip()
+    password = value.strip()
+    if password.startswith("pbkdf2_sha256$"):
+        return password
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 310_000)
+    return f"pbkdf2_sha256$310000${salt.hex()}${digest.hex()}"
+
+
+def verify_password(password: str, stored_value: str) -> tuple[bool, bool]:
+    candidate = password.strip()
+    if not stored_value.startswith("pbkdf2_sha256$"):
+        return hmac.compare_digest(candidate, stored_value), True
+
+    try:
+        algorithm, rounds_text, salt_text, digest_text = stored_value.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False, False
+        rounds = int(rounds_text)
+        if rounds < 100_000 or rounds > 2_000_000:
+            return False, False
+        salt = bytes.fromhex(salt_text)
+        expected = bytes.fromhex(digest_text)
+    except (ValueError, TypeError):
+        return False, False
+
+    actual = hashlib.pbkdf2_hmac("sha256", candidate.encode(), salt, rounds)
+    return hmac.compare_digest(actual, expected), False
+
+
+def upgrade_user_password_hash(user_id: str, password: str) -> None:
+    encoded = _normalize_password(password)
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET password = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                (encoded, user_id),
+            )
+        connection.commit()
 
 
 def _serialize_permissions(value: dict[str, Any] | None) -> str:
@@ -162,6 +333,11 @@ def create_user_record(payload: dict[str, Any]) -> dict[str, Any]:
     updated_at = payload.get("updated_at") or created_at
 
     with get_connection() as connection:
+        old_media_urls = _fetch_media_urls(
+            connection,
+            "SELECT avatar FROM users WHERE id = %s UNION ALL SELECT avatar_url FROM profiles WHERE id = %s",
+            (user_id, user_id),
+        )
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -216,8 +392,23 @@ def create_user_record(payload: dict[str, Any]) -> dict[str, Any]:
                     updated_at,
                 ),
             )
+            if role == "instructor":
+                cursor.execute(
+                    """
+                    INSERT INTO instructor_profiles (id, user_id, specialty, status, permissions, joined_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        specialty = EXCLUDED.specialty,
+                        status = EXCLUDED.status,
+                        permissions = EXCLUDED.permissions,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (user_id, user_id, specialty or "General Instruction", status, _serialize_permissions(permissions), joined_at),
+                )
+        cleanup_paths = _unreferenced_media_paths(connection, old_media_urls)
         connection.commit()
 
+    _purge_media_paths(cleanup_paths)
     return get_user_by_id(user_id)
 
 
@@ -263,6 +454,270 @@ def get_all_users() -> list[dict[str, Any]]:
             cursor.execute("SELECT * FROM users ORDER BY created_at DESC, email ASC")
             rows = cursor.fetchall()
     return [_row_to_user(row) for row in rows]
+
+
+def get_admin_instructors() -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT u.id, u.name, u.email, u.status, u.specialty, u.permissions, u.joined_at,
+                       p.full_name, ip.verification_status, ip.is_verified, ip.verification_document_url,
+                       ip.payout_status, ip.payout_processed_at,
+                       COUNT(DISTINCT c.id) AS total_courses,
+                       COUNT(DISTINCT e.id) AS enrolled_students,
+                       COALESCE(SUM(CASE WHEN e.id IS NOT NULL THEN c.price ELSE 0 END), 0) AS total_earnings
+                FROM users u
+                JOIN profiles p ON p.id = u.id
+                LEFT JOIN instructor_profiles ip ON ip.user_id = u.id
+                LEFT JOIN courses c ON c.instructor_id = u.id
+                LEFT JOIN enrollments e ON e.course_id = c.id
+                WHERE u.role = 'instructor'
+                GROUP BY u.id, p.full_name, ip.verification_status, ip.is_verified,
+                         ip.verification_document_url, ip.payout_status, ip.payout_processed_at
+                ORDER BY u.created_at DESC, u.email ASC
+                """
+            )
+            rows = cursor.fetchall()
+
+    instructors: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            permissions = json.loads(row.get("permissions") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            permissions = {}
+        earnings = float(row.get("total_earnings") or 0)
+        instructors.append({
+            "id": row["id"],
+            "name": row.get("full_name") or row["name"],
+            "email": row["email"],
+            "specialty": row.get("specialty") or "General Instruction",
+            "status": row.get("status") or "active",
+            "verification_status": row.get("verification_status") or "pending",
+            "verification_document_url": row.get("verification_document_url"),
+            "is_verified": bool(row.get("is_verified", False)),
+            "payout_status": row.get("payout_status") or "pending",
+            "payout_processed_at": row.get("payout_processed_at"),
+            "total_courses": int(row.get("total_courses") or 0),
+            "enrolled_students": int(row.get("enrolled_students") or 0),
+            "total_earnings": earnings,
+            "platform_commission": round(earnings * 0.1, 2),
+            "joined_at": row.get("joined_at"),
+            "permissions": permissions,
+        })
+    return instructors
+
+
+def update_admin_instructor(user_id: str, values: dict[str, Any]) -> dict[str, Any] | None:
+    instructor = next((row for row in get_admin_instructors() if row["id"] == user_id), None)
+    if instructor is None:
+        return None
+
+    name = str(values.get("full_name", values.get("name", instructor["name"]))).strip()
+    email = str(values.get("email", instructor["email"])).strip().lower()
+    specialty = str(values.get("specialty", instructor["specialty"])).strip() or "General Instruction"
+    status_value = str(values.get("status", instructor["status"]))
+    if status_value not in {"active", "inactive", "suspended"}:
+        raise ValueError("Status must be active, inactive, or suspended.")
+    permissions = values.get("permissions", instructor["permissions"])
+    permissions_json = _serialize_permissions(permissions if isinstance(permissions, dict) else {})
+    verification_status = values.get("verification_status", instructor["verification_status"])
+    if verification_status not in {"pending", "approved", "rejected"}:
+        raise ValueError("Unsupported instructor verification status.")
+    payout_status = values.get("payout_status", instructor["payout_status"])
+    if payout_status not in {"pending", "paid"}:
+        raise ValueError("Unsupported instructor payout status.")
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET name = %s, email = %s, specialty = %s, status = %s, permissions = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s AND role = 'instructor'",
+                (name, email, specialty, status_value, permissions_json, user_id),
+            )
+            if cursor.rowcount == 0:
+                return None
+            cursor.execute(
+                "UPDATE profiles SET full_name = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                (name, user_id),
+            )
+            cursor.execute(
+                """
+                INSERT INTO instructor_profiles (id, user_id, specialty, status, permissions, verification_status,
+                    is_verified, payout_status, payout_processed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                    CASE WHEN %s = 'paid' THEN CURRENT_TIMESTAMP ELSE NULL END)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    specialty = EXCLUDED.specialty, status = EXCLUDED.status, permissions = EXCLUDED.permissions,
+                    verification_status = EXCLUDED.verification_status, is_verified = EXCLUDED.is_verified,
+                    payout_status = EXCLUDED.payout_status,
+                    payout_processed_at = CASE WHEN EXCLUDED.payout_status = 'paid'
+                        THEN COALESCE(instructor_profiles.payout_processed_at, CURRENT_TIMESTAMP) ELSE NULL END,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (user_id, user_id, specialty, status_value, permissions_json, verification_status,
+                 bool(values.get("is_verified", instructor["is_verified"])), payout_status, payout_status),
+            )
+        connection.commit()
+    return next((row for row in get_admin_instructors() if row["id"] == user_id), None)
+
+
+def reassign_instructor_courses(instructor_id: str, course_ids: list[str]) -> bool:
+    if not any(row["id"] == instructor_id for row in get_admin_instructors()):
+        return False
+    selected = list(dict.fromkeys(course_ids))
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM courses WHERE id = ANY(%s::text[])", (selected,))
+            found_ids = {row[0] for row in cursor.fetchall()}
+            if found_ids != set(selected):
+                return False
+            cursor.execute(
+                "UPDATE courses SET instructor_id = 'admin-1', updated_at = CURRENT_TIMESTAMP WHERE instructor_id = %s AND NOT (id = ANY(%s::text[]))",
+                (instructor_id, selected),
+            )
+            cursor.execute(
+                "UPDATE courses SET instructor_id = %s, updated_at = CURRENT_TIMESTAMP WHERE id = ANY(%s::text[])",
+                (instructor_id, selected),
+            )
+        connection.commit()
+    return True
+
+
+def create_admin_notification(user_id: str, title: str, message: str, created_by: str) -> None:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO notifications (id, user_id, title, message, notification_type, created_by) SELECT %s, id, %s, %s, 'admin', %s FROM users WHERE id = %s",
+                (str(uuid.uuid4()), title, message, created_by, user_id),
+            )
+        connection.commit()
+
+
+def create_bulk_student_notifications(student_ids: list[str], created_by: str) -> int:
+    unique_ids = list(dict.fromkeys(student_ids))
+    if not unique_ids:
+        return 0
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            inserted = 0
+            for student_id in unique_ids:
+                cursor.execute(
+                    "INSERT INTO notifications (id, user_id, title, message, notification_type, created_by) SELECT %s, id, 'Platform update', 'You have a new message from the platform administration.', 'admin', %s FROM users WHERE id = %s AND role = 'student'",
+                    (str(uuid.uuid4()), created_by, student_id),
+                )
+                inserted += cursor.rowcount
+        connection.commit()
+    return inserted
+
+
+def update_user_password(user_id: str, password: str) -> bool:
+    encoded = _normalize_password(password)
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE users SET password = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (encoded, user_id))
+            changed = cursor.rowcount > 0
+        connection.commit()
+    return changed
+
+
+def get_user_mfa_secret(user_id: str, *, pending: bool = False) -> str | None:
+    column = "mfa_pending_secret" if pending else "mfa_secret"
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(f"SELECT {column} FROM users WHERE id = %s", (user_id,))
+            row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def save_pending_mfa_secret(user_id: str, secret: str) -> bool:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET mfa_pending_secret = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s AND status = 'active'",
+                (secret, user_id),
+            )
+            changed = cursor.rowcount > 0
+        connection.commit()
+    return changed
+
+
+def enable_user_mfa(user_id: str) -> bool:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET mfa_secret = mfa_pending_secret, mfa_pending_secret = NULL, mfa_enabled = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = %s AND status = 'active' AND mfa_pending_secret IS NOT NULL",
+                (user_id,),
+            )
+            changed = cursor.rowcount > 0
+        connection.commit()
+    return changed
+
+
+def reset_user_mfa_attempts(user_id: str) -> None:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET mfa_failed_attempts = 0, mfa_locked_until = NULL WHERE id = %s",
+                (user_id,),
+            )
+        connection.commit()
+
+
+def record_failed_mfa_attempt(user_id: str) -> None:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET mfa_failed_attempts = mfa_failed_attempts + 1, mfa_locked_until = CASE WHEN mfa_failed_attempts + 1 >= 5 THEN CURRENT_TIMESTAMP + INTERVAL '15 minutes' ELSE mfa_locked_until END WHERE id = %s",
+                (user_id,),
+            )
+        connection.commit()
+
+
+def get_user_mfa_lock(user_id: str) -> tuple[int, Any] | None:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT mfa_failed_attempts, mfa_locked_until FROM users WHERE id = %s", (user_id,))
+            row = cursor.fetchone()
+    return (int(row[0] or 0), row[1]) if row else None
+
+
+def get_platform_admin_settings() -> dict[str, Any]:
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute("SELECT settings FROM platform_settings WHERE id = 1")
+            row = cursor.fetchone()
+    stored = row.get("settings") if row else {}
+    result = {**DEFAULT_ADMIN_SETTINGS, **(stored if isinstance(stored, dict) else {})}
+    result["smtp_password"] = ""
+    return result
+
+
+def save_platform_admin_settings(values: dict[str, Any]) -> dict[str, Any]:
+    allowed = set(DEFAULT_ADMIN_SETTINGS)
+    updates = {key: value for key, value in values.items() if key in allowed and key != "smtp_password"}
+    for key in ("enforce_mfa", "allowStudentSignup", "autoPublishCourses", "requireEmailVerification"):
+        if key in updates and not isinstance(updates[key], bool):
+            raise ValueError(f"{key} must be a boolean.")
+    if "jwt_expiration_minutes" in updates:
+        expiration = updates["jwt_expiration_minutes"]
+        if isinstance(expiration, bool) or not isinstance(expiration, int) or not 1 <= expiration <= 1440:
+            raise ValueError("jwt_expiration_minutes must be an integer between 1 and 1440.")
+    if values.get("smtp_password"):
+        updates["smtp_password"] = str(values["smtp_password"])
+    with get_connection() as connection:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute("SELECT settings FROM platform_settings WHERE id = 1")
+            row = cursor.fetchone()
+        stored = row.get("settings") if row else {}
+        merged = {**DEFAULT_ADMIN_SETTINGS, **(stored if isinstance(stored, dict) else {}), **updates}
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO platform_settings (id, settings, updated_at) VALUES (1, %s, CURRENT_TIMESTAMP) ON CONFLICT (id) DO UPDATE SET settings = EXCLUDED.settings, updated_at = CURRENT_TIMESTAMP",
+                (Json(merged),),
+            )
+        connection.commit()
+    merged["smtp_password"] = ""
+    return merged
 
 
 def get_course_reviews(course_id: str) -> list[dict[str, Any]]:
@@ -649,10 +1104,15 @@ def delete_enrollment(student_id: str, course_id: str) -> bool:
 
 def delete_course_record(course_id: str) -> bool:
     with get_connection() as connection:
+        media_urls = _course_media_urls(connection, course_id)
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM courses WHERE id = %s", (course_id,))
             deleted = cursor.rowcount > 0
-        connection.commit()
+        if deleted:
+            media_paths = _unreferenced_media_paths(connection, media_urls)
+        else:
+            media_paths = []
+    _purge_media_paths(media_paths)
     return deleted
 
 
@@ -702,6 +1162,17 @@ def _normalize_course_status_and_publish_flag(payload: dict[str, Any]) -> tuple[
     return "draft", False
 
 
+def _course_payload_media_urls(payload: dict[str, Any]) -> list[str]:
+    urls = [payload.get("thumbnail_url") or payload.get("thumbnailUrl")]
+    for module in payload.get("modules") or []:
+        for lesson in module.get("lessons") or []:
+            urls.extend([
+                lesson.get("video_url") or lesson.get("videoUrl"),
+                lesson.get("attachment_url") or lesson.get("attachmentUrl"),
+            ])
+    return [str(url) for url in urls if url]
+
+
 def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
     created_at = payload.get("created_at") or __import__("datetime").datetime.utcnow().isoformat()
     updated_at = payload.get("updated_at") or created_at
@@ -717,8 +1188,20 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
     ai_model = str(payload.get("ai_model") or payload.get("aiModel") or "Coach Pro").strip() or "Coach Pro"
     price = float(payload.get("price") or 0)
     featured = bool(payload.get("is_featured", payload.get("isFeatured", False)))
+    modules = []
+    for module in payload.get("modules") or []:
+        normalized_module = dict(module)
+        normalized_module["id"] = str(module.get("id") or uuid.uuid4())
+        normalized_module["lessons"] = []
+        for lesson in module.get("lessons") or []:
+            normalized_lesson = dict(lesson)
+            normalized_lesson["id"] = str(lesson.get("id") or uuid.uuid4())
+            normalized_module["lessons"].append(normalized_lesson)
+        modules.append(normalized_module)
+    payload_media_urls = _course_payload_media_urls({**payload, "modules": modules})
 
     with get_connection() as connection:
+        old_media_urls = _course_media_urls(connection, course_id)
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -756,8 +1239,11 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
                 ),
             )
 
-            for module in payload.get("modules") or []:
-                module_id = str(module.get("id") or uuid.uuid4())
+            module_ids: list[str] = []
+            lesson_ids: list[str] = []
+            for module in modules:
+                module_id = module["id"]
+                module_ids.append(module_id)
                 module_title = str(module.get("title") or "Module").strip() or "Module"
                 module_position = int(module.get("position") or 0)
                 cursor.execute(
@@ -772,8 +1258,9 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
                     (module_id, course_id, module_title, module_position, created_at),
                 )
 
-                for lesson in module.get("lessons") or []:
-                    lesson_id = str(lesson.get("id") or uuid.uuid4())
+                for lesson in module["lessons"]:
+                    lesson_id = lesson["id"]
+                    lesson_ids.append(lesson_id)
                     lesson_title = str(lesson.get("title") or "Lesson").strip() or "Lesson"
                     lesson_content = lesson.get("content")
                     lesson_video_url = lesson.get("video_url") or lesson.get("videoUrl")
@@ -791,6 +1278,7 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
                         )
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (id) DO UPDATE SET
+                            module_id = EXCLUDED.module_id,
                             title = EXCLUDED.title,
                             content = EXCLUDED.content,
                             video_url = EXCLUDED.video_url,
@@ -816,7 +1304,18 @@ def create_course_record(payload: dict[str, Any]) -> dict[str, Any]:
                             created_at,
                         ),
                     )
-        connection.commit()
+
+            cursor.execute(
+                "DELETE FROM lessons WHERE module_id IN (SELECT id FROM course_modules WHERE course_id = %s) AND NOT (id = ANY(%s::text[]))",
+                (course_id, lesson_ids),
+            )
+            cursor.execute(
+                "DELETE FROM course_modules WHERE course_id = %s AND NOT (id = ANY(%s::text[]))",
+                (course_id, module_ids),
+            )
+        cleanup_paths = _unreferenced_media_paths(connection, old_media_urls)
+
+    _purge_media_paths(cleanup_paths)
 
     return get_course_by_id(course_id) or {
         "id": course_id,
@@ -1079,10 +1578,15 @@ def update_course_admin_fields(course_id: str, instructor_id: str | None = None,
 
 def delete_user_by_id(user_id: str) -> bool:
     with get_connection() as connection:
+        media_urls = _user_media_urls(connection, user_id)
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
             deleted = cursor.rowcount > 0
-        connection.commit()
+        if deleted:
+            media_paths = _unreferenced_media_paths(connection, media_urls)
+        else:
+            media_paths = []
+    _purge_media_paths(media_paths)
     return deleted
 
 
@@ -1111,6 +1615,7 @@ def _row_to_user(row: dict[str, Any]) -> dict[str, Any]:
         "role": row["role"],
         "avatar": row["avatar"],
         "status": row["status"],
+        "mfa_enabled": bool(row.get("mfa_enabled", False)),
         "specialty": row["specialty"],
         "permissions": permissions_payload,
         "joined_at": row["joined_at"],

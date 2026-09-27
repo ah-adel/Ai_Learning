@@ -7,7 +7,6 @@ import {
   Power,
   ServerCog,
   SlidersHorizontal,
-  Sparkles,
 } from 'lucide-react';
 import { readLocalAiModels, writeLocalAiModels, type LocalAiModelRecord } from '@/lib/localDb';
 import { AdminAiEnhancements } from '@/components/dashboard/AdminAiEnhancements';

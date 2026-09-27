@@ -34,6 +34,8 @@ services:
       AI_SERVICE_URL: http://ai-service:8001
       ENVIRONMENT: docker
       PYTHONPATH: /app
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       APP_DATA_DIR: /app/data
       APP_UPLOAD_DIR: /app/uploads
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/educational_platform

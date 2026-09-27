@@ -1,25 +1,24 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { ProtectedRoute } from '@/components/dashboard/ProtectedRoute';
-import { LandingPage } from '@/pages/LandingPage';
-import { SignInPage } from '@/pages/auth/SignInPage';
-import { SignUpPage } from '@/pages/auth/SignUpPage';
-import { DashboardRedirect } from '@/pages/dashboard/DashboardRedirect';
-import { StudentDashboardPage } from '@/pages/dashboard/StudentDashboardPage';
-import { InstructorDashboardPage } from '@/pages/dashboard/InstructorDashboardPage';
-import { AdminDashboardPage } from '@/pages/dashboard/AdminDashboardPage';
-import { AdminCoursesPage } from '@/pages/dashboard/AdminCoursesPage';
-import { CoursesPage } from '@/pages/dashboard/CoursesPage';
-import { CourseDetailPage } from '@/pages/dashboard/CourseDetailPage';
-import { BrowseCoursesPage } from '@/pages/dashboard/BrowseCoursesPage';
-import { StudentsPage } from '@/pages/dashboard/StudentsPage';
-import { AdminStudentsPage } from '@/pages/dashboard/AdminStudentsPage';
-import { InstructorsPage } from '@/pages/dashboard/InstructorsPage';
-import { AiModelsPage } from '@/pages/dashboard/AiModelsPage';
-import { SettingsPage } from '@/pages/dashboard/SettingsPage';
+const LandingPage = lazy(() => import('@/pages/LandingPage').then((module) => ({ default: module.LandingPage })));
+const SignInPage = lazy(() => import('@/pages/auth/SignInPage').then((module) => ({ default: module.SignInPage })));
+const SignUpPage = lazy(() => import('@/pages/auth/SignUpPage').then((module) => ({ default: module.SignUpPage })));
+const DashboardRedirect = lazy(() => import('@/pages/dashboard/DashboardRedirect').then((module) => ({ default: module.DashboardRedirect })));
+const StudentDashboardPage = lazy(() => import('@/pages/dashboard/StudentDashboardPage').then((module) => ({ default: module.StudentDashboardPage })));
+const InstructorDashboardPage = lazy(() => import('@/pages/dashboard/InstructorDashboardPage').then((module) => ({ default: module.InstructorDashboardPage })));
+const AdminDashboardPage = lazy(() => import('@/pages/dashboard/AdminDashboardPage').then((module) => ({ default: module.AdminDashboardPage })));
+const AdminCoursesPage = lazy(() => import('@/pages/dashboard/AdminCoursesPage').then((module) => ({ default: module.AdminCoursesPage })));
+const CoursesPage = lazy(() => import('@/pages/dashboard/CoursesPage').then((module) => ({ default: module.CoursesPage })));
+const CourseDetailPage = lazy(() => import('@/pages/dashboard/CourseDetailPage').then((module) => ({ default: module.CourseDetailPage })));
+const BrowseCoursesPage = lazy(() => import('@/pages/dashboard/BrowseCoursesPage').then((module) => ({ default: module.BrowseCoursesPage })));
+const AdminStudentsPage = lazy(() => import('@/pages/dashboard/AdminStudentsPage').then((module) => ({ default: module.AdminStudentsPage })));
+const InstructorsPage = lazy(() => import('@/pages/dashboard/InstructorsPage').then((module) => ({ default: module.InstructorsPage })));
+const AiModelsPage = lazy(() => import('@/pages/dashboard/AiModelsPage').then((module) => ({ default: module.AiModelsPage })));
+const SettingsPage = lazy(() => import('@/pages/dashboard/SettingsPage').then((module) => ({ default: module.SettingsPage })));
 
 function GuestRoute({ children }: { children: React.ReactNode }) {
   // Redirect authenticated users away from auth pages
@@ -57,6 +56,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <ScrollToTop />
+          <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950" aria-label="Loading page" />}>
           <Routes>
             <Route path="/" element={<RootRoute />} />
 
@@ -133,7 +133,7 @@ export default function App() {
               <Route
                 path="/browse"
                 element={
-                  <ProtectedRoute allowedRoles={['student']}>
+                  <ProtectedRoute allowedRoles={['student', 'admin']}>
                     <BrowseCoursesPage />
                   </ProtectedRoute>
                 }
@@ -184,7 +184,7 @@ export default function App() {
               <Route
                 path="/courses"
                 element={
-                  <ProtectedRoute allowedRoles={['student', 'instructor']}>
+                  <ProtectedRoute allowedRoles={['student', 'instructor', 'admin']}>
                     <CoursesPage />
                   </ProtectedRoute>
                 }
@@ -192,7 +192,7 @@ export default function App() {
               <Route
                 path="/courses/:courseId"
                 element={
-                  <ProtectedRoute allowedRoles={['student', 'instructor']}>
+                  <ProtectedRoute allowedRoles={['student', 'instructor', 'admin']}>
                     <CourseDetailPage />
                   </ProtectedRoute>
                 }
@@ -218,6 +218,7 @@ export default function App() {
             {/* Root redirect */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>

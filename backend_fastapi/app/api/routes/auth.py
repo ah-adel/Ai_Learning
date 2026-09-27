@@ -4,13 +4,68 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import pyotp
 from fastapi import APIRouter, Header, HTTPException, Query, status
+from pydantic import BaseModel, Field
 
-from app.db import create_user_record, get_all_users, get_profile_by_user_id, get_user_by_email, get_user_by_id, update_user_account
+from app.core.config import settings
+from app.core.security import create_access_token, get_current_user, get_user_from_mfa_authorization
+from app.db import (
+    create_user_record,
+    enable_user_mfa,
+    get_all_users,
+    get_platform_admin_settings,
+    get_profile_by_user_id,
+    get_user_by_email,
+    get_user_mfa_lock,
+    get_user_mfa_secret,
+    record_failed_mfa_attempt,
+    reset_user_mfa_attempts,
+    save_pending_mfa_secret,
+    update_user_account,
+    upgrade_user_password_hash,
+    verify_password,
+)
 from app.schemas.auth import AccountProfileUpdate, SignInRequest, SignUpRequest
 from app.schemas.common import ApiErrorResponse, ApiSuccessResponse
 
 router = APIRouter()
+
+
+class MfaVerificationRequest(BaseModel):
+    code: str = Field(..., pattern=r"^\d{6}$")
+
+
+def _auth_result(user: dict[str, Any], profile: dict[str, Any], access_token: str) -> ApiSuccessResponse[dict[str, Any]]:
+    return ApiSuccessResponse(
+        data={
+            "user": {"id": user["id"], "email": user["email"], "role": user["role"]},
+            "session": {
+                "user_id": user["id"],
+                "email": user["email"],
+                "authenticated": True,
+                "access_token": access_token,
+                "token_type": "bearer",
+            },
+            "profile": profile,
+        },
+        message="Signed in successfully.",
+    )
+
+
+def _mfa_challenge_result(user: dict[str, Any], setup_required: bool) -> ApiSuccessResponse[dict[str, Any]]:
+    purpose = "mfa_setup" if setup_required else "mfa_challenge"
+    return ApiSuccessResponse(
+        data={
+            "user": {"id": user["id"], "email": user["email"], "role": user["role"]},
+            "mfa_required": not setup_required,
+            "mfa_setup_required": setup_required,
+            "challenge_token": create_access_token(
+                user["id"], user["role"], token_purpose=purpose, expires_minutes=5
+            ),
+        },
+        message="Complete multi-factor authentication to continue.",
+    )
 
 
 def _profile_payload(user: dict[str, Any]) -> dict[str, Any]:
@@ -43,6 +98,9 @@ def _profile_payload(user: dict[str, Any]) -> dict[str, Any]:
 async def sign_up(payload: SignUpRequest) -> ApiSuccessResponse[dict[str, Any]]:
     normalized_email = payload.email.strip().lower()
     normalized_password = payload.password.strip()
+    platform_settings = get_platform_admin_settings()
+    if payload.role == "student" and not platform_settings.get("allowStudentSignup", True):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "Student registration is currently closed."})
     existing = get_user_by_email(normalized_email)
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"error": "An account with that email already exists."})
@@ -68,6 +126,9 @@ async def sign_up(payload: SignUpRequest) -> ApiSuccessResponse[dict[str, Any]]:
     })
 
     profile = _profile_payload(user)
+    if platform_settings.get("enforce_mfa"):
+        return _mfa_challenge_result(user, setup_required=True)
+    access_token = create_access_token(user["id"], user["role"])
     return ApiSuccessResponse(
         data={
             "user": {
@@ -75,7 +136,7 @@ async def sign_up(payload: SignUpRequest) -> ApiSuccessResponse[dict[str, Any]]:
                 "email": user["email"],
                 "role": user["role"],
             },
-            "session": {"user_id": user["id"], "email": user["email"], "authenticated": True},
+            "session": {"user_id": user["id"], "email": user["email"], "authenticated": True, "access_token": access_token, "token_type": "bearer"},
             "profile": profile,
         },
         message="Account created successfully.",
@@ -92,22 +153,75 @@ async def sign_in(payload: SignInRequest) -> ApiSuccessResponse[dict[str, Any]]:
     normalized_email = payload.email.strip().lower()
     normalized_password = payload.password.strip()
     user = get_user_by_email(normalized_email)
-    if user is None or user["password"] != normalized_password:
+    if user is None or user.get("status") != "active":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Invalid email or password."})
+    password_valid, needs_upgrade = verify_password(normalized_password, user["password"])
+    if not password_valid:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Invalid email or password."})
+    if needs_upgrade:
+        upgrade_user_password_hash(user["id"], normalized_password)
+
+    platform_settings = get_platform_admin_settings()
+    if platform_settings.get("enforce_mfa") or user.get("mfa_enabled"):
+        mfa_lock = get_user_mfa_lock(user["id"])
+        if mfa_lock and mfa_lock[1] and mfa_lock[1] > datetime.now(timezone.utc):
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail={"error": "Multi-factor verification is temporarily locked. Try again later."})
+        return _mfa_challenge_result(user, setup_required=not user.get("mfa_enabled", False))
 
     profile = _profile_payload(user)
+    access_token = create_access_token(user["id"], user["role"])
+    return _auth_result(user, profile, access_token)
+
+
+@router.post("/auth/mfa/setup", response_model=ApiSuccessResponse[dict[str, str]])
+async def setup_mfa(authorization: str | None = Header(default=None, alias="Authorization")) -> ApiSuccessResponse[dict[str, str]]:
+    authentication = get_user_from_mfa_authorization(authorization)
+    if authentication is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Authentication required."})
+    user, token_purpose = authentication
+    if token_purpose == "mfa_challenge":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "A verification challenge cannot start MFA enrollment."})
+
+    secret = pyotp.random_base32()
+    if not save_pending_mfa_secret(user["id"], secret):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Account is unavailable."})
+    totp = pyotp.TOTP(secret)
     return ApiSuccessResponse(
         data={
-            "user": {
-                "id": user["id"],
-                "email": user["email"],
-                "role": user["role"],
-            },
-            "session": {"user_id": user["id"], "email": user["email"], "authenticated": True},
-            "profile": profile,
+            "secret": secret,
+            "otpauth_url": totp.provisioning_uri(name=user["email"], issuer_name=settings.app_name),
         },
-        message="Signed in successfully.",
+        message="Add this account to an authenticator app, then verify the current code.",
     )
+
+
+@router.post("/auth/mfa/verify", response_model=ApiSuccessResponse[dict[str, Any]])
+async def verify_mfa(
+    payload: MfaVerificationRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> ApiSuccessResponse[dict[str, Any]]:
+    authentication = get_user_from_mfa_authorization(authorization)
+    if authentication is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Authentication required."})
+    user, token_purpose = authentication
+    lock = get_user_mfa_lock(user["id"])
+    if lock and lock[1] and lock[1] > datetime.now(timezone.utc):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail={"error": "Multi-factor verification is temporarily locked. Try again later."})
+
+    enrolling = token_purpose in {"mfa_setup", "access"}
+    secret = get_user_mfa_secret(user["id"], pending=enrolling)
+    if not secret:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"error": "MFA setup is required before verification."})
+    if not pyotp.TOTP(secret).verify(payload.code, valid_window=1):
+        record_failed_mfa_attempt(user["id"])
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "The authenticator code is invalid."})
+
+    if enrolling and not enable_user_mfa(user["id"]):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"error": "MFA enrollment could not be completed."})
+    reset_user_mfa_attempts(user["id"])
+    refreshed_user = {**user, "mfa_enabled": True}
+    access_token = create_access_token(user["id"], user["role"], mfa_verified=True)
+    return _auth_result(refreshed_user, _profile_payload(user), access_token)
 
 
 @router.get(
@@ -116,10 +230,10 @@ async def sign_in(payload: SignInRequest) -> ApiSuccessResponse[dict[str, Any]]:
     status_code=status.HTTP_200_OK,
     responses={404: {"model": ApiErrorResponse}},
 )
-async def get_me(user_id: str = Query(..., min_length=1, description="User ID to fetch profile for.")) -> ApiSuccessResponse[dict[str, Any]]:
-    user = get_user_by_id(user_id)
+async def get_me(authorization: str | None = Header(default=None, alias="Authorization")) -> ApiSuccessResponse[dict[str, Any]]:
+    user = get_current_user(authorization)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "User not found."})
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Authentication required."})
 
     profile = _profile_payload(user)
     return ApiSuccessResponse(
@@ -146,8 +260,8 @@ async def update_profile(
     user_id: str = Query(..., min_length=1),
     authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> ApiSuccessResponse[dict[str, Any]]:
-    token = authorization.split(" ", 1)[1].strip() if authorization and authorization.lower().startswith("bearer ") else ""
-    if token != user_id:
+    current_user = get_current_user(authorization)
+    if current_user is None or current_user["id"] != user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Authentication required."})
 
     existing_email_owner = get_user_by_email(payload.email)
@@ -176,12 +290,10 @@ async def update_profile(
 async def list_users(
     authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> ApiSuccessResponse[list[dict[str, Any]]]:
-    if not authorization or not authorization.lower().startswith("bearer "):
+    current_user = get_current_user(authorization)
+    if current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Authentication required."})
-
-    token = authorization.split(" ", 1)[1].strip()
-    current_user = get_user_by_id(token)
-    if current_user is None or current_user["role"] != "admin":
+    if current_user["role"] != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "Admin access required."})
 
     users = get_all_users()

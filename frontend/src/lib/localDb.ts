@@ -4,10 +4,8 @@ import type {
   Enrollment,
   Lesson,
   Module,
-  Progress,
   User,
 } from '@/types';
-import { deleteEntityCleanupApi, type DeleteCleanupResult } from '@/services/api';
 import { invalidateInstructorCourseCache, invalidateStudentEnrollmentCache } from '@/lib/dataCache';
 
 export const localDatabaseConfig = {
@@ -832,129 +830,9 @@ export function writeLocalCourses(courses: LocalCourseRecord[]) {
   }
 }
 
-function getLessonMediaUrls(lesson: Partial<CourseLessonRecord> | null | undefined): string[] {
-  const urls = [lesson?.videoUrl, lesson?.attachmentUrl].filter((value): value is string => typeof value === 'string');
-  return [...new Set(urls.map((url) => sanitizeMediaUrl(url)).filter((url): url is string => Boolean(url)))];
-}
-
-export function getCourseMediaUrls(course: Partial<LocalCourseRecord> | null | undefined): string[] {
-  if (!course) return [];
-
-  const urls = new Set<string>();
-
-  if (typeof course.thumbnail === 'string') {
-    const thumbnailUrl = sanitizeMediaUrl(course.thumbnail);
-    if (thumbnailUrl) urls.add(thumbnailUrl);
-  }
-
-  for (const module of course.modules ?? []) {
-    for (const lesson of module.lessons ?? []) {
-      for (const url of getLessonMediaUrls(lesson)) {
-        urls.add(url);
-      }
-    }
-  }
-
-  return Array.from(urls);
-}
-
-export function isMediaUrlReferencedElsewhere(
-  url: string,
-  courses: LocalCourseRecord[] = readLocalCourses(),
-  exclusion?: { courseId?: string; lessonId?: string; moduleId?: string },
-): boolean {
-  const normalized = sanitizeMediaUrl(url);
-  if (!normalized) return false;
-
-  for (const course of courses) {
-    if (exclusion?.courseId && course.id === exclusion.courseId) {
-      if (!exclusion.lessonId && !exclusion.moduleId) {
-        continue;
-      }
-    }
-
-    if (course.thumbnail === normalized) {
-      const matchesCourseSkip = exclusion?.courseId === course.id && !exclusion.lessonId && !exclusion.moduleId;
-      if (!matchesCourseSkip) return true;
-    }
-
-    for (const module of course.modules ?? []) {
-      if (exclusion?.courseId === course.id && exclusion?.moduleId === module.id) {
-        continue;
-      }
-
-      for (const lesson of module.lessons ?? []) {
-        if (exclusion?.courseId === course.id && exclusion?.lessonId === lesson.id) {
-          continue;
-        }
-
-        if (lesson.videoUrl === normalized || lesson.attachmentUrl === normalized) {
-          return true;
-        }
-      }
-    }
-  }
-
-  return false;
-}
-
-export function getUnsharedMediaUrls(
-  urls: Iterable<string>,
-  courses: LocalCourseRecord[] = readLocalCourses(),
-  exclusion?: { courseId?: string; lessonId?: string; moduleId?: string },
-): string[] {
-  const uniqueUrls = new Set<string>();
-
-  for (const rawUrl of urls) {
-    const normalized = sanitizeMediaUrl(rawUrl);
-    if (!normalized) continue;
-    uniqueUrls.add(normalized);
-  }
-
-  return Array.from(uniqueUrls).filter((url) => !isMediaUrlReferencedElsewhere(url, courses, exclusion));
-}
-
-export async function cleanupUnusedMediaUrls(
-  urls: Iterable<string>,
-  entity: Partial<Record<string, unknown>> & { id?: string; type?: string } = {},
-  courses: LocalCourseRecord[] = readLocalCourses(),
-  exclusion?: { courseId?: string; lessonId?: string; moduleId?: string },
-): Promise<DeleteCleanupResult> {
-  const removableUrls = getUnsharedMediaUrls(urls, courses, exclusion);
-
-  if (!removableUrls.length) {
-    return {
-      entityId: typeof entity.id === 'string' ? entity.id : null,
-      deletedFiles: [],
-      purgedCollections: [],
-      errors: [],
-    };
-  }
-
-  const cleanupPayload = {
-    ...entity,
-    type: entity.type ?? 'resource',
-    files: removableUrls.map((url) => ({ url })),
-    url: removableUrls[0],
-  };
-
-  try {
-    return await deleteEntityCleanupApi(cleanupPayload as Record<string, unknown>);
-  } catch (error) {
-    console.warn('Media cleanup failed for unshared files; preserving database state.', error);
-    return {
-      entityId: typeof entity.id === 'string' ? entity.id : null,
-      deletedFiles: [],
-      purgedCollections: [],
-      errors: [{ message: error instanceof Error ? error.message : 'Media cleanup failed.' }],
-    };
-  }
-}
-
 export async function deleteCourseRecord(course: LocalCourseRecord) {
   const currentCourses = readLocalCourses();
   const payloadCourse = currentCourses.find((item) => item.id === course.id) ?? course;
-  const removableUrls = getUnsharedMediaUrls(getCourseMediaUrls(payloadCourse), currentCourses, { courseId: payloadCourse.id });
 
   const token = typeof window !== 'undefined' ? window.sessionStorage.getItem('learnflow_session_token') ?? '' : '';
   if (!token) {
@@ -977,16 +855,6 @@ export async function deleteCourseRecord(course: LocalCourseRecord) {
 
   invalidateInstructorCourseCache(payloadCourse.instructorId);
   invalidateStudentEnrollmentCache();
-
-  try {
-    await cleanupUnusedMediaUrls(removableUrls, {
-      id: payloadCourse.id,
-      type: 'course',
-      title: payloadCourse.title,
-    }, currentCourses, { courseId: payloadCourse.id });
-  } catch (error) {
-    console.warn('Course cleanup endpoint unavailable; continuing with local purge only.', error);
-  }
 
   const nextCourses = currentCourses.filter((item) => item.id !== payloadCourse.id);
   writeLocalCourses(nextCourses);
@@ -1110,65 +978,6 @@ export function getEnrollmentProgressFromLessonSet(
   const uniqueCompleted = Array.from(new Set([...completedLessonIds]));
   const completedCount = uniqueCompleted.filter((lessonId) => allLessons.some((lesson) => lesson.id === lessonId)).length;
   return Math.min(100, Math.round((completedCount / totalLessons) * 100));
-}
-
-export function getLessonMediaReferenceSet(course: LocalCourseRecord | null | undefined): Set<string> {
-  const mediaSet = new Set<string>();
-  if (!course) return mediaSet;
-
-  for (const module of course.modules ?? []) {
-    for (const lesson of module.lessons ?? []) {
-      for (const url of getLessonMediaUrls(lesson)) {
-        mediaSet.add(url);
-      }
-    }
-  }
-
-  return mediaSet;
-}
-
-export async function deleteLessonMediaIfUnused(
-  courseId: string,
-  lessonId: string,
-  lesson: Partial<CourseLessonRecord> | null | undefined,
-): Promise<DeleteCleanupResult> {
-  const courses = readLocalCourses();
-  const targetCourse = courses.find((course) => course.id === courseId);
-  if (!targetCourse) {
-    return { entityId: lessonId, deletedFiles: [], purgedCollections: [], errors: [] };
-  }
-
-  const lessonUrls = getLessonMediaUrls(lesson ?? {});
-  if (!lessonUrls.length) {
-    return { entityId: lessonId, deletedFiles: [], purgedCollections: [], errors: [] };
-  }
-
-  return cleanupUnusedMediaUrls(lessonUrls, { id: lessonId, type: 'lesson' }, courses, {
-    courseId,
-    lessonId,
-  });
-}
-
-export async function deleteModuleMediaIfUnused(
-  courseId: string,
-  moduleId: string,
-  module: { lessons?: Array<Partial<CourseLessonRecord>> } | null | undefined,
-): Promise<DeleteCleanupResult> {
-  const courses = readLocalCourses();
-  const targetCourse = courses.find((course) => course.id === courseId);
-  if (!targetCourse) {
-    return { entityId: moduleId, deletedFiles: [], purgedCollections: [], errors: [] };
-  }
-
-  const moduleUrls = (module?.lessons ?? []).flatMap((lesson) => getLessonMediaUrls(lesson));
-  if (!moduleUrls.length) {
-    return { entityId: moduleId, deletedFiles: [], purgedCollections: [], errors: [] };
-  }
-
-  return cleanupUnusedMediaUrls(moduleUrls, { id: moduleId, type: 'module' }, courses, {
-    courseId,
-    moduleId,
-  });
 }
 
 export function normalizeEnrollmentProgress(

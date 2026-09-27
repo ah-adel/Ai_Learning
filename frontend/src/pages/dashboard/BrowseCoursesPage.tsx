@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useI18n } from '@/context/I18nContext';
 import { useScrollLock } from '@/hooks/useScrollLock';
 import { enrollStudentInCourse, fetchPublishedCourses } from '@/lib/courseRepository';
+import { getCourseCategoryLabel, getCourseDifficultyLabel } from '@/lib/courseLabels';
 import { EmptyState } from '@/components/ui/EmptyState';
 import {
   ensureInstructorRecordsForCourses,
@@ -51,15 +52,21 @@ const courseGradients = [
   'from-pink-500 to-rose-600',
 ];
 
-function formatCourseDuration(course: LocalCourseRecord): string {
+function formatCourseDuration(course: LocalCourseRecord, language: 'ar' | 'en'): string {
   const totalSeconds = course.modules
     ?.flatMap((module) => module.lessons)
     .reduce((sum, lesson) => sum + Number(lesson.duration ?? 0), 0) ?? 0;
 
-  if (!totalSeconds) return 'New course';
+  if (!totalSeconds) return language === 'ar' ? 'دورة جديدة' : 'New course';
 
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const formatNumber = (value: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US').format(value);
+
+  if (language === 'ar') {
+    if (hours > 0) return `${formatNumber(hours)} ساعة ${formatNumber(minutes)} دقيقة`;
+    return `${formatNumber(minutes)} دقيقة`;
+  }
 
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
@@ -75,7 +82,7 @@ function formatLearnerCount(count: number): string {
 
 export function BrowseCoursesPage() {
   const { session } = useAuth();
-  const { t, direction } = useI18n();
+  const { t, direction, language } = useI18n();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<(typeof categories)[number]>('All');
   const [selectedDifficulty, setSelectedDifficulty] = useState<(typeof difficulties)[number]>('All');
@@ -117,7 +124,7 @@ export function BrowseCoursesPage() {
             title: course.title,
             category: (course.category ?? 'Development') as CourseCategory,
             difficulty: (course.difficulty ?? 'Beginner') as CourseDifficulty,
-            duration: formatCourseDuration(course),
+            duration: formatCourseDuration(course, language),
             lessons: lessonCount,
             rating: Number(courseAverageRating),
             reviewCount: courseReviewCount,
@@ -160,7 +167,7 @@ export function BrowseCoursesPage() {
     return () => {
       isMounted = false;
     };
-  }, [session?.userId]);
+  }, [language, session?.userId]);
 
   const filteredCourses = useMemo(() => {
     return catalogCourses.filter((course) => {
@@ -274,7 +281,7 @@ export function BrowseCoursesPage() {
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
-                  {category}
+                  {category === 'All' ? t('common.all') : getCourseCategoryLabel(category, t)}
                 </button>
               ))}
             </div>
@@ -295,7 +302,7 @@ export function BrowseCoursesPage() {
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
-                  {level}
+                  {level === 'All' ? t('common.all') : getCourseDifficultyLabel(level, t)}
                 </button>
               ))}
             </div>
@@ -338,10 +345,10 @@ export function BrowseCoursesPage() {
               <div className="p-5">
                 <div className="flex items-center justify-between gap-3">
                   <span className="rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                    {course.category}
+                    {getCourseCategoryLabel(course.category, t)}
                   </span>
                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    {course.difficulty}
+                    {getCourseDifficultyLabel(course.difficulty, t)}
                   </span>
                 </div>
 
@@ -365,7 +372,7 @@ export function BrowseCoursesPage() {
                     <Clock3 className="h-3.5 w-3.5" />
                     {course.duration}
                   </span>
-                  <span>{course.lessons} lessons</span>
+                  <span>{course.lessons} {t('browse.lessons')}</span>
                 </div>
 
                 <div className="mt-4 flex items-center justify-between gap-3">
@@ -409,9 +416,9 @@ export function BrowseCoursesPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
-                    {selectedCourse.category}
+                    {getCourseCategoryLabel(selectedCourse.category, t)}
                     <span className="text-gray-300 dark:text-gray-700">•</span>
-                    {selectedCourse.difficulty}
+                    {getCourseDifficultyLabel(selectedCourse.difficulty, t)}
                   </div>
                   <h2 className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">
                     {selectedCourse.title}

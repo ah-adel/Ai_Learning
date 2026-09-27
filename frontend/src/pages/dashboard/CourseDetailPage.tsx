@@ -16,25 +16,23 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useI18n } from '@/context/I18nContext';
 import { VideoPlayer } from '@/components/dashboard/VideoPlayer';
+import { updateCourseForInstructor } from '@/lib/courseRepository';
 import {
   deleteCourseRecord,
-  deleteLessonMediaIfUnused,
-  deleteModuleMediaIfUnused,
   normalizeEnrollmentProgress,
   readLocalCourses,
   readLocalEnrollments,
   readLocalUsers,
   upsertEnrollmentProgress,
-  writeLocalCourses,
   writeLocalEnrollments,
-  writeLocalUsers,
   type CourseLessonRecord,
   type CourseModuleRecord,
   type LocalCourseRecord,
   type LocalEnrollmentRecord,
 } from '@/lib/localDb';
-import { uploadMediaFile, fetchExternalVideoDuration } from '@/services/api';
+import { uploadMediaFile } from '@/services/api';
 import { fetchCourseById } from '@/lib/courseRepository';
+import { getCourseCategoryLabel, getCourseDifficultyLabel, getLessonTypeLabel } from '@/lib/courseLabels';
 
 type CourseLesson = CourseLessonRecord;
 type CourseModule = CourseModuleRecord;
@@ -61,18 +59,23 @@ const getDurationParts = (totalSeconds: number) => {
   };
 };
 
-const formatLessonDuration = (durationSeconds: number) => {
+const formatLessonDuration = (durationSeconds: number, language: 'ar' | 'en') => {
   const { hours, minutes, seconds } = getDurationParts(durationSeconds);
+  const formatNumber = (value: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US').format(value);
 
   if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
+    return language === 'ar'
+      ? `${formatNumber(hours)} ساعة ${formatNumber(minutes)} دقيقة ${formatNumber(seconds)} ثانية`
+      : `${hours}h ${minutes}m ${seconds}s`;
   }
 
   if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
+    return language === 'ar'
+      ? `${formatNumber(minutes)} دقيقة ${formatNumber(seconds)} ثانية`
+      : `${minutes}m ${seconds}s`;
   }
 
-  return `${seconds}s`;
+  return language === 'ar' ? `${formatNumber(seconds)} ثانية` : `${seconds}s`;
 };
 
 const formatFileSize = (bytes: number) => {
@@ -431,10 +434,6 @@ export function CourseDetailPage() {
     }
     return allLessons[0];
   }, [allLessons, selectedLessonId]);
-  const completionPercent = useMemo(() => {
-    if (!allLessons.length) return 0;
-    return Math.round((completedLessonIds.length / allLessons.length) * 100);
-  }, [allLessons.length, completedLessonIds.length]);
   const courseAverageRating = useMemo(
     () => Number(course?.averageRating ?? 0),
     [course?.averageRating],
@@ -459,15 +458,6 @@ export function CourseDetailPage() {
       setSelectedLessonId(resumeLessonId ?? allLessons[0].id);
     }
   }, [allLessons, resumeLessonId, selectedLessonId]);
-
-  const selectedLessonVideoUrl = selectedLesson ? getMediaValue(
-    selectedLesson.videoUrl,
-    (selectedLesson as Partial<CourseLesson> & Record<string, unknown>).video_url as string | null | undefined,
-  ) : null;
-  const selectedLessonAttachmentUrl = selectedLesson ? getMediaValue(
-    selectedLesson.attachmentUrl,
-    (selectedLesson as Partial<CourseLesson> & Record<string, unknown>).attachment_url as string | null | undefined,
-  ) : null;
 
   const handleToggleLesson = (lessonId: string) => {
     if (!course || !session?.userId || isInstructorOwner) return;
@@ -594,17 +584,6 @@ export function CourseDetailPage() {
   };
 
   const handleDeleteLesson = async (moduleIndex: number, lessonId: string) => {
-    const currentModule = modules[moduleIndex];
-    const targetLesson = currentModule?.lessons.find((lesson) => lesson.id === lessonId);
-
-    if (course && targetLesson) {
-      try {
-        await deleteLessonMediaIfUnused(course.id, lessonId, targetLesson);
-      } catch (error) {
-        console.warn('Lesson media cleanup failed; keeping the lesson deletion state intact.', error);
-      }
-    }
-
     setModules((current) =>
       current.map((module, index) =>
         index === moduleIndex
@@ -615,16 +594,6 @@ export function CourseDetailPage() {
   };
 
   const handleDeleteModule = async (moduleIndex: number) => {
-    const currentModule = modules[moduleIndex];
-
-    if (course && currentModule) {
-      try {
-        await deleteModuleMediaIfUnused(course.id, currentModule.id, currentModule);
-      } catch (error) {
-        console.warn('Module media cleanup failed; keeping the module deletion state intact.', error);
-      }
-    }
-
     setModules((current) => current.filter((_, index) => index !== moduleIndex));
   };
 
@@ -849,7 +818,7 @@ export function CourseDetailPage() {
     }
   };
 
-  const handleSaveCourseEdits = () => {
+  const handleSaveCourseEdits = async () => {
     if (!course || !session?.userId) return;
 
     if (!canEditCourse) {
@@ -867,18 +836,20 @@ export function CourseDetailPage() {
       }
     }
 
-    setSaveError(null);
-
     const updatedCourse = {
       ...course,
       modules,
     };
 
-    const nextCourses = readLocalCourses().map((item) =>
-      item.id === course.id ? updatedCourse : item,
-    );
-    writeLocalCourses(nextCourses);
-    setCourse(updatedCourse);
+    try {
+      setSaveError(null);
+      const savedCourse = await updateCourseForInstructor(updatedCourse, course.instructorId);
+      setCourse(savedCourse);
+      setModules(normalizeCourseModules(savedCourse.modules ?? []));
+    } catch (error) {
+      console.error('Failed to save course edits:', error);
+      setSaveError(error instanceof Error ? error.message : t('courseDetail.saveFailure'));
+    }
   };
 
   const handleDeleteCourse = async () => {
@@ -890,18 +861,9 @@ export function CourseDetailPage() {
     try {
       await deleteCourseRecord(course);
     } catch (error) {
-      console.warn('Course deletion cleanup failed; falling back to local course removal.', error);
-      writeLocalCourses(readLocalCourses().filter((item) => item.id !== course.id));
-
-      const users = readLocalUsers();
-      writeLocalUsers(
-        users.map((user) => ({
-          ...user,
-          courseIds: (user.courseIds ?? []).filter((courseId) => courseId !== course.id),
-        })),
-      );
-
-      writeLocalEnrollments(readLocalEnrollments().filter((entry) => entry.courseId !== course.id));
+      console.error('Course deletion failed:', error);
+      setSaveError(error instanceof Error ? error.message : t('courseDetail.deleteFailure'));
+      return;
     }
 
     navigate('/courses');
@@ -1063,7 +1025,7 @@ export function CourseDetailPage() {
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-sm font-medium">{lesson.title}</span>
                                 <span className="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400">
-                                  {formatLessonDuration(lesson.duration)}
+                                  {formatLessonDuration(lesson.duration, language)}
                                 </span>
                               </span>
                             </button>
@@ -1109,7 +1071,7 @@ export function CourseDetailPage() {
                     </div>
                     <div className="inline-flex items-center gap-2 rounded-full bg-primary-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
                       <Sparkles className="h-3.5 w-3.5" />
-                      {course.category}
+                      {getCourseCategoryLabel(course.category, t)}
                     </div>
                   </div>
                 </div>
@@ -1169,11 +1131,11 @@ export function CourseDetailPage() {
                 <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 dark:bg-gray-800 dark:text-gray-300">
                     <Clock3 className="h-3.5 w-3.5" />
-                    {formatLessonDuration(currentLesson.duration)}
+                    {formatLessonDuration(currentLesson.duration, language)}
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 dark:bg-gray-800 dark:text-gray-300">
                     <FileText className="h-3.5 w-3.5" />
-                    {currentLesson.type}
+                    {getLessonTypeLabel(currentLesson.type, t)}
                   </span>
                 </div>
 
@@ -1183,7 +1145,7 @@ export function CourseDetailPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
-                  <span className="rounded-full bg-gray-100 px-3 py-1 dark:bg-gray-800">{course.difficulty}</span>
+                  <span className="rounded-full bg-gray-100 px-3 py-1 dark:bg-gray-800">{getCourseDifficultyLabel(course.difficulty, t)}</span>
                   <span className="flex items-center gap-1 text-amber-500">
                     <Sparkles className="h-4 w-4 fill-current" />
                     {courseAverageRating.toFixed(1)}
@@ -1377,7 +1339,7 @@ export function CourseDetailPage() {
         </div>
         <div className="flex items-center gap-2 rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
           <Sparkles className="h-3.5 w-3.5" />
-          {course.category}
+          {getCourseCategoryLabel(course.category, t)}
         </div>
       </div>
 
@@ -1557,7 +1519,7 @@ export function CourseDetailPage() {
                                 className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"
                               />
                               <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
-                                {formatLessonDuration(lesson.duration)}
+                                {formatLessonDuration(lesson.duration, language)}
                               </div>
                             </div>
 

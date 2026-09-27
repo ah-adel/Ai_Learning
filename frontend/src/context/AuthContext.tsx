@@ -10,9 +10,7 @@ import type { Profile, UserRole } from '@/types/database.types';
 import {
   isPublicSignupRole,
   readLocalSession,
-  readLocalUsers,
   writeLocalSession,
-  writeLocalUsers,
 } from '@/lib/localDb';
 import { localizedRuntimeError } from '@/lib/errorMessages';
 
@@ -64,6 +62,47 @@ type LocalUser = {
   role: UserRole;
 };
 
+type AuthApiResponse = {
+  user: LocalUser;
+  session?: {
+    user_id: string;
+    email: string;
+    authenticated: boolean;
+    access_token: string;
+    token_type: 'bearer';
+  };
+  profile?: Profile | null;
+  challenge_token?: string;
+  mfa_setup_required?: boolean;
+};
+
+export type MfaChallenge = {
+  challengeToken: string;
+  setupRequired: boolean;
+  secret?: string;
+  otpauthUrl?: string;
+};
+
+type AuthActionResult = { error: string | null; mfaChallenge?: MfaChallenge };
+
+async function prepareMfaChallenge(response: AuthApiResponse): Promise<MfaChallenge> {
+  const challengeToken = response.challenge_token;
+  const setupRequired = Boolean(response.mfa_setup_required);
+  if (!challengeToken) throw new Error('The server did not return an MFA challenge.');
+  if (!setupRequired) return { challengeToken, setupRequired: false };
+
+  const setup = await apiRequest<{ secret: string; otpauth_url: string }>('/api/auth/mfa/setup', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${challengeToken}` },
+  });
+  return {
+    challengeToken,
+    setupRequired,
+    secret: setup.secret,
+    otpauthUrl: setup.otpauth_url,
+  };
+}
+
 interface UserListRow {
   id: string;
   name: string;
@@ -103,13 +142,14 @@ interface AuthContextValue {
   user: LocalUser | null;
   profile: Profile | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string) => Promise<AuthActionResult>;
   signUp: (
     email: string,
     password: string,
     fullName: string,
     role: UserRole
-  ) => Promise<{ error: string | null }>;
+  ) => Promise<AuthActionResult>;
+  completeMfa: (challengeToken: string, code: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateAccount: (fullName: string, email: string, bio: string) => Promise<{ error: string | null }>;
@@ -143,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!userId || typeof window === 'undefined') return null;
 
     try {
-      const authSession = await apiRequest<{ user: { id: string; email: string; role: UserRole }; profile: Profile | null }>(`/api/auth/me?user_id=${encodeURIComponent(userId)}`);
+      const authSession = await apiRequest<{ user: LocalUser; profile: Profile | null }>('/api/auth/me');
       const nextProfile = authSession?.profile ?? null;
       setProfile(nextProfile);
       return nextProfile;
@@ -163,7 +203,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const restoreSession = async () => {
       try {
         const currentSession = readLocalSession();
-        if (!currentSession?.userId) {
+        if (!currentSession?.userId || !window.sessionStorage.getItem('learnflow_session_token')) {
+          window.sessionStorage.removeItem('learnflow_session_token');
+          writeLocalSession(null);
           setSession(null);
           setProfile(null);
           setLoading(false);
@@ -171,8 +213,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         const profileFromBackend = await loadProfile(currentSession.userId);
+        if (!profileFromBackend) {
+          window.sessionStorage.removeItem('learnflow_session_token');
+          writeLocalSession(null);
+          setSession(null);
+          setProfile(null);
+          return;
+        }
         setSession({ userId: currentSession.userId, email: currentSession.email });
-        setProfile(profileFromBackend ?? null);
+        setProfile(profileFromBackend);
       } catch (error) {
         console.error('Failed to restore backend session:', error);
         setSession(null);
@@ -191,18 +240,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const authResponse = await apiRequest<{ user: { id: string; email: string; role: UserRole }; session: { user_id: string; email: string; authenticated: boolean }; profile: Profile | null }>(`/api/auth/sign-in`, {
+      const authResponse = await apiRequest<AuthApiResponse>(`/api/auth/sign-in`, {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
 
+      if (authResponse?.challenge_token) {
+        return { error: null, mfaChallenge: await prepareMfaChallenge(authResponse) };
+      }
+
       const user = authResponse?.user;
-      if (!user) {
+      if (!user || !authResponse.session?.access_token) {
         return { error: localizedRuntimeError(new Error('Invalid email or password.')) };
       }
 
       const nextSession = { userId: user.id, email: user.email };
-      window.sessionStorage.setItem('learnflow_session_token', user.id);
+      window.sessionStorage.setItem('learnflow_session_token', authResponse.session.access_token);
       writeLocalSession(nextSession);
       setSession(nextSession);
       setProfile(authResponse?.profile ?? buildProfile(user.id, user.email, user.role));
@@ -228,18 +281,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: 'Public signup is limited to student and instructor accounts.' };
       }
 
-      const authResponse = await apiRequest<{ user: { id: string; email: string; role: UserRole }; session: { user_id: string; email: string; authenticated: boolean }; profile: Profile | null }>(`/api/auth/sign-up`, {
+      const authResponse = await apiRequest<AuthApiResponse>(`/api/auth/sign-up`, {
         method: 'POST',
         body: JSON.stringify({ email, password, full_name: fullName, role }),
       });
 
+      if (authResponse?.challenge_token) {
+        return { error: null, mfaChallenge: await prepareMfaChallenge(authResponse) };
+      }
+
       const user = authResponse?.user;
-      if (!user) {
+      if (!user || !authResponse.session?.access_token) {
         return { error: localizedRuntimeError(new Error('Unable to create the account.')) };
       }
 
       const nextSession = { userId: user.id, email: user.email };
-      window.sessionStorage.setItem('learnflow_session_token', user.id);
+      window.sessionStorage.setItem('learnflow_session_token', authResponse.session.access_token);
       writeLocalSession(nextSession);
       setSession(nextSession);
       setProfile(authResponse?.profile ?? buildProfile(user.id, fullName, user.role));
@@ -247,6 +304,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Failed to sign up with backend:', error);
       return { error: localizedRuntimeError(error, 'Unable to create the account.') };
+    }
+  }
+
+  async function completeMfa(challengeToken: string, code: string) {
+    try {
+      const authResponse = await apiRequest<AuthApiResponse>('/api/auth/mfa/verify', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${challengeToken}` },
+        body: JSON.stringify({ code }),
+      });
+      const user = authResponse.user;
+      const accessToken = authResponse.session?.access_token;
+      if (!user || !accessToken || !authResponse.profile) {
+        return { error: 'The server did not complete MFA authentication.' };
+      }
+
+      window.sessionStorage.setItem('learnflow_session_token', accessToken);
+      writeLocalSession({ userId: user.id, email: user.email });
+      setSession({ userId: user.id, email: user.email });
+      setProfile(authResponse.profile);
+      return { error: null };
+    } catch (error) {
+      return { error: localizedRuntimeError(error, 'Unable to verify the authenticator code.') };
     }
   }
 
@@ -338,6 +418,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       signIn,
       signUp,
+      completeMfa,
       signOut,
       refreshProfile,
       updateAccount,

@@ -3,9 +3,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 MEDIA_FIELD_KEYS = {
     "url",
+    "thumbnailurl",
+    "thumbnail_url",
+    "avatar",
+    "avatarurl",
+    "avatar_url",
     "videourl",
     "attachmenturl",
     "videopath",
@@ -93,41 +99,59 @@ def collect_candidate_urls(value: Any, seen: set[int] | None = None, results: li
     return results
 
 
-def resolve_server_storage_path(value: str | None, project_root: str | Path = ".") -> str | None:
+def _resolve_upload_root(upload_root: str | Path) -> Path:
+    return Path(upload_root).expanduser().resolve()
+
+
+def resolve_server_storage_path(value: str | None, project_root: str | Path = "uploads") -> str | None:
     normalized = normalize_value(value)
     if not normalized:
         return None
 
-    relative_path = normalized
-    try:
-        from urllib.parse import urlparse
-
-        parsed = urlparse(normalized)
-        if parsed.scheme and parsed.netloc:
-            relative_path = parsed.path
-    except Exception:
+    parsed = urlparse(normalized)
+    relative_path = unquote(parsed.path if parsed.scheme or parsed.netloc else normalized)
+    relative_path = relative_path.replace("\\", "/").split("?", 1)[0].split("#", 1)[0]
+    if relative_path.startswith("/uploads/"):
+        relative_path = relative_path[len("/uploads/"):]
+    elif relative_path.startswith("uploads/"):
+        relative_path = relative_path[len("uploads/"):]
+    elif relative_path.startswith(("videos/", "attachments/", "thumbnails/")):
         pass
+    elif "/" not in relative_path and relative_path not in {"", ".", ".."}:
+        root = _resolve_upload_root(project_root)
+        for folder in ("videos", "attachments", "thumbnails"):
+            candidate_path = (root / folder / relative_path).resolve()
+            if _is_within(candidate_path, root) and candidate_path.is_file():
+                return str(candidate_path)
+        return None
+    else:
+        return None
 
-    root = Path(project_root).resolve()
-    candidates = [
-        root / "uploads" / relative_path.lstrip("/"),
-        root / relative_path.lstrip("/"),
-        root / "uploads" / Path(relative_path).name,
-        root / "uploads" / "videos" / Path(relative_path).name,
-        root / "uploads" / "attachments" / Path(relative_path).name,
-    ]
+    parts = Path(relative_path).parts
+    if not relative_path or any(part in {"", ".", ".."} for part in parts):
+        return None
 
-    for candidate in candidates:
-        try:
-            if candidate.exists() and candidate.is_file():
-                return str(candidate)
-        except OSError:
-            continue
-
+    root = _resolve_upload_root(project_root)
+    candidate = (root / relative_path).resolve()
+    if not _is_within(candidate, root):
+        return None
+    try:
+        if candidate.is_file():
+            return str(candidate)
+    except OSError:
+        return None
     return None
 
 
-def collect_entity_media_paths(entity: Any, project_root: str | Path = ".") -> list[str]:
+def _is_within(candidate: Path, root: Path) -> bool:
+    try:
+        candidate.relative_to(root)
+        return candidate != root
+    except ValueError:
+        return False
+
+
+def collect_entity_media_paths(entity: Any, project_root: str | Path = "uploads") -> list[str]:
     if entity is None or not isinstance(entity, dict):
         return []
 
@@ -144,13 +168,17 @@ def collect_entity_media_paths(entity: Any, project_root: str | Path = ".") -> l
     return unique_paths
 
 
-def purge_files(file_paths: list[str]) -> tuple[list[str], list[dict[str, str]]]:
+def purge_files(file_paths: list[str], upload_root: str | Path | None = None) -> tuple[list[str], list[dict[str, str]]]:
     deleted: list[str] = []
     errors: list[dict[str, str]] = []
+    root = _resolve_upload_root(upload_root) if upload_root is not None else None
 
     for raw_path in file_paths:
         try:
             absolute_path = str(Path(raw_path).resolve())
+            if root is not None and not _is_within(Path(absolute_path), root):
+                errors.append({"path": str(raw_path), "message": "Resolved path is outside the uploads directory."})
+                continue
             if not os.path.exists(absolute_path):
                 continue
             os.remove(absolute_path)
@@ -159,6 +187,35 @@ def purge_files(file_paths: list[str]) -> tuple[list[str], list[dict[str, str]]]
             errors.append({"path": str(raw_path), "message": str(exc)})
 
     return deleted, errors
+
+
+def purge_orphaned_files(referenced_urls: list[str], upload_root: str | Path) -> dict[str, Any]:
+    root = _resolve_upload_root(upload_root)
+    referenced_paths = {
+        Path(path).resolve()
+        for url in referenced_urls
+        if (path := resolve_server_storage_path(url, root)) is not None
+    }
+    candidates: list[str] = []
+    errors: list[dict[str, str]] = []
+
+    if root.exists():
+        for path in root.rglob("*"):
+            try:
+                if path.is_symlink() or not path.is_file():
+                    continue
+                resolved = path.resolve()
+                if not _is_within(resolved, root):
+                    errors.append({"path": str(path), "message": "Resolved path is outside the uploads directory."})
+                    continue
+                if resolved not in referenced_paths:
+                    candidates.append(str(resolved))
+            except OSError as exc:
+                errors.append({"path": str(path), "message": str(exc)})
+
+    deleted, purge_errors = purge_files(candidates, upload_root=root)
+    errors.extend(purge_errors)
+    return {"deleted_files": deleted, "errors": errors}
 
 
 def purge_entity_references(entity: Any, database_store: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -196,7 +253,7 @@ def purge_entity_references(entity: Any, database_store: dict[str, Any] | None =
     return {"purgedCollections": purged_collections, "errors": errors}
 
 
-def cleanup_deletion_artifacts(entity: Any, project_root: str | Path = ".", database_store: dict[str, Any] | None = None) -> dict[str, Any]:
+def cleanup_deletion_artifacts(entity: Any, project_root: str | Path = "uploads", database_store: dict[str, Any] | None = None) -> dict[str, Any]:
     result: dict[str, Any] = {
         "entityId": entity.get("id") if isinstance(entity, dict) else None,
         "deletedFiles": [],
@@ -209,7 +266,8 @@ def cleanup_deletion_artifacts(entity: Any, project_root: str | Path = ".", data
 
     try:
         paths = collect_entity_media_paths(entity, project_root)
-        deleted, errors = purge_files(paths)
+        upload_root = _resolve_upload_root(project_root)
+        deleted, errors = purge_files(paths, upload_root=upload_root)
         result["deletedFiles"] = deleted
         result["errors"].extend(errors)
     except Exception as exc:  # pragma: no cover - defensive cleaning branch

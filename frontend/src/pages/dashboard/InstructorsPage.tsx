@@ -14,13 +14,11 @@ import {
   X,
 } from 'lucide-react';
 import {
-  readLocalCourses,
-  readLocalUsers,
-  writeLocalUsers,
-  type LocalCourseRecord,
   type LocalInstructorPermission,
-  type LocalUserRecord,
 } from '@/lib/localDb';
+import { fetchAdminCourseInventory, fetchAdminInstructors, createAdminInstructor, deleteAdminInstructor, reassignInstructorCourses, updateAdminInstructor, type AdminInstructor } from '@/lib/adminInstructorRepository';
+import type { AdminCourse } from '@/lib/adminCourseRepository';
+import { errorMessage } from '@/lib/apiError';
 import { AdminInstructorsEnhancements } from '@/components/dashboard/AdminInstructorsEnhancements';
 import { useTranslation } from '@/context/I18nContext';
 import { useScrollLock } from '@/hooks/useScrollLock';
@@ -36,7 +34,7 @@ type InstructorRow = {
   joinedAt: string;
   permissions: LocalInstructorPermission;
   courseIds: string[];
-  assignedCourses: LocalCourseRecord[];
+  assignedCourses: AdminCourse[];
 };
 
 type InstructorFormState = {
@@ -73,37 +71,29 @@ const statusStyles: Record<InstructorStatus, string> = {
   suspended: 'bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-300',
 };
 
-const formatDate = (value: string) =>
-  new Date(value).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
-function mapInstructorRow(user: LocalUserRecord, allCourses: LocalCourseRecord[]): InstructorRow {
-  const courseIds =
-    user.courseIds ??
-    allCourses.filter((course) => course.instructorId === user.id).map((course) => course.id);
-
+function mapInstructorRow(user: AdminInstructor, allCourses: AdminCourse[]): InstructorRow {
+  const courseIds = allCourses.filter((course) => course.instructor_id === user.id).map((course) => course.id);
   return {
     id: user.id,
-    name: user.profile.full_name,
+    name: user.name,
     email: user.email,
     specialty: user.specialty ?? 'General Instruction',
     status: user.status ?? 'active',
-    joinedAt: user.joinedAt ?? user.profile.created_at,
-    permissions: user.permissions ?? { ...defaultPermissions },
+    joinedAt: user.joined_at ?? new Date(0).toISOString(),
+    permissions: {
+      manageCourses: Boolean(user.permissions?.manageCourses ?? user.permissions?.manage_courses ?? true),
+      moderateStudents: Boolean(user.permissions?.moderateStudents ?? user.permissions?.moderate_students ?? true),
+      viewAnalytics: Boolean(user.permissions?.viewAnalytics ?? user.permissions?.view_analytics ?? true),
+    },
     courseIds,
-    assignedCourses: allCourses.filter(
-      (course) => courseIds.includes(course.id) || course.instructorId === user.id
-    ),
+    assignedCourses: allCourses.filter((course) => courseIds.includes(course.id)),
   };
 }
 
 export function InstructorsPage() {
-  const { t } = useTranslation();
+  const { t, formatDate } = useTranslation();
   const [rows, setRows] = useState<InstructorRow[]>([]);
-  const [availableCourses, setAvailableCourses] = useState<LocalCourseRecord[]>([]);
+  const [availableCourses, setAvailableCourses] = useState<AdminCourse[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | InstructorStatus>('all');
   const [specialtyFilter, setSpecialtyFilter] = useState('all');
@@ -116,16 +106,12 @@ export function InstructorsPage() {
 
   useScrollLock(isModalOpen);
 
-  const loadInstructors = () => {
+  const loadInstructors = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-
-      const users = readLocalUsers().filter((user) => user.role === 'instructor');
-      const allCourses = readLocalCourses();
-
+      const [users, allCourses] = await Promise.all([fetchAdminInstructors(), fetchAdminCourseInventory()]);
       setAvailableCourses(allCourses);
-
       const nextRows = users.map((user) => mapInstructorRow(user, allCourses));
       setRows(nextRows);
 
@@ -134,14 +120,14 @@ export function InstructorsPage() {
       }
     } catch (loadError) {
       console.error('Failed to load instructor records:', loadError);
-      setError('Unable to load instructor records from the local platform database.');
+      setError(errorMessage(loadError, 'Unable to load instructor records.'));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadInstructors();
+    void loadInstructors();
   }, []);
 
   const specialties = useMemo(
@@ -165,6 +151,14 @@ export function InstructorsPage() {
     () => filteredRows.find((row) => row.id === selectedId) ?? filteredRows[0] ?? null,
     [filteredRows, selectedId]
   );
+  const formatSpecialty = (specialty: string) =>
+    specialty === 'General Instruction' ? t('instructorProfile.generalInstruction') : specialty;
+  const permissionLabel = (key: string) => {
+    if (key === 'manageCourses') return t('instructorProfile.permissionManageCourses');
+    if (key === 'moderateStudents') return t('instructorProfile.permissionModerateStudents');
+    if (key === 'viewAnalytics') return t('instructorProfile.permissionViewAnalytics');
+    return key;
+  };
 
   const openCreateModal = () => {
     setEditingId(null);
@@ -194,7 +188,7 @@ export function InstructorsPage() {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
-  const saveInstructor = (event: React.FormEvent<HTMLFormElement>) => {
+  const saveInstructor = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const fullName = form.fullName.trim();
@@ -206,98 +200,58 @@ export function InstructorsPage() {
       return;
     }
 
+    if (!editingId && form.password.trim().length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
     try {
-      const users = readLocalUsers();
-      const now = new Date().toISOString();
-
-      const targetUser = users.find((user) => user.id === form.id);
-      const nextUsers: LocalUserRecord[] = [...users];
-
-      if (targetUser) {
-        const userIndex = nextUsers.findIndex((user) => user.id === targetUser.id);
-        const updatedUser: LocalUserRecord = {
-          ...targetUser,
-          email: email.toLowerCase(),
-          password: form.password || targetUser.password,
-          status: form.status as LocalUserRecord['status'],
-          specialty,
-          joinedAt: targetUser.joinedAt ?? now,
-          permissions: form.permissions,
-          courseIds: form.courseIds,
-          profile: {
-            ...targetUser.profile,
-            full_name: fullName,
-            updated_at: now,
-          },
-        };
-        nextUsers[userIndex] = updatedUser;
-      } else {
-        const userId = crypto.randomUUID();
-        const newUser: LocalUserRecord = {
-          id: userId,
+      let instructorId = editingId;
+      if (editingId) {
+        await updateAdminInstructor(editingId, {
           name: fullName,
           email: email.toLowerCase(),
-          password: form.password || 'instructor123',
-          role: 'instructor',
-          avatar: null,
-          status: form.status as LocalUserRecord['status'],
           specialty,
-          joinedAt: now,
+          status: form.status,
           permissions: form.permissions,
-          courseIds: form.courseIds,
-          profile: {
-            id: userId,
-            full_name: fullName,
-            role: 'instructor',
-            avatar_url: null,
-            bio: 'Instructor and course mentor.',
-            created_at: now,
-            updated_at: now,
-          },
-        };
-        nextUsers.push(newUser);
+        });
+        await reassignInstructorCourses(editingId, form.courseIds);
+      } else {
+        const created = await createAdminInstructor({
+          full_name: fullName,
+          email: email.toLowerCase(),
+          password: form.password,
+          specialty,
+          status: form.status,
+          permissions: form.permissions,
+          course_ids: form.courseIds,
+        });
+        instructorId = created.id;
       }
-
-      writeLocalUsers(nextUsers);
       setIsModalOpen(false);
       setForm(emptyForm());
       setError(null);
-      setSelectedId(targetUser?.id ?? nextUsers[nextUsers.length - 1].id);
-      loadInstructors();
+      setSelectedId(instructorId);
+      await loadInstructors();
     } catch (saveError) {
       console.error('Failed to save instructor:', saveError);
-      setError('Unable to save the instructor record.');
+      setError(errorMessage(saveError, 'Unable to save the instructor record.'));
     }
   };
 
-  const toggleInstructorStatus = (instructorId: string) => {
+  const toggleInstructorStatus = async (instructorId: string) => {
+    const row = rows.find((item) => item.id === instructorId);
+    if (!row) return;
     try {
-      const users = readLocalUsers();
-      const nextUsers: LocalUserRecord[] = users.map((user) => {
-        if (user.id !== instructorId || user.role !== 'instructor') {
-          return user;
-        }
-
-        const nextStatus: LocalUserRecord['status'] =
-          user.status === 'active' ? 'inactive' : 'active';
-        return { ...user, status: nextStatus };
-      });
-
-      writeLocalUsers(nextUsers);
-      setRows((current) =>
-        current.map((row) =>
-          row.id === instructorId
-            ? { ...row, status: row.status === 'active' ? 'inactive' : 'active' }
-            : row
-        )
-      );
+      await updateAdminInstructor(instructorId, { status: row.status === 'active' ? 'inactive' : 'active' });
+      await loadInstructors();
     } catch (saveError) {
       console.error('Failed to update status:', saveError);
-      setError('Unable to update the instructor status.');
+      setError(errorMessage(saveError, 'Unable to update the instructor status.'));
     }
   };
 
-  const deleteInstructor = (instructorId: string) => {
+  const deleteInstructor = async (instructorId: string) => {
     const row = rows.find((entry) => entry.id === instructorId);
     if (!row) return;
 
@@ -308,16 +262,14 @@ export function InstructorsPage() {
     if (!confirmed) return;
 
     try {
-      const users = readLocalUsers();
-      const nextUsers = users.filter((user) => user.id !== instructorId);
-      writeLocalUsers(nextUsers);
-      setRows((current) => current.filter((entry) => entry.id !== instructorId));
+      await deleteAdminInstructor(instructorId);
       setSelectedId((current) => (current === instructorId ? null : current));
       setIsModalOpen(false);
       setError(null);
+      await loadInstructors();
     } catch (deleteError) {
       console.error('Failed to delete instructor:', deleteError);
-      setError('Unable to delete the instructor profile.');
+      setError(errorMessage(deleteError, 'Unable to delete the instructor profile.'));
     }
   };
 
@@ -440,7 +392,7 @@ export function InstructorsPage() {
                 <option value="all">{t('instructors.allSpecialties')}</option>
                 {specialties.map((specialty) => (
                   <option key={specialty} value={specialty}>
-                    {specialty}
+                    {formatSpecialty(specialty)}
                   </option>
                 ))}
               </select>
@@ -491,7 +443,7 @@ export function InstructorsPage() {
                       </button>
                     </td>
                     <td className="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
-                      {row.specialty}
+                      {formatSpecialty(row.specialty)}
                     </td>
                     <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-200">
                       {row.courseIds.length}
@@ -510,7 +462,7 @@ export function InstructorsPage() {
                       </span>
                     </td>
                     <td className="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">
-                      {formatDate(row.joinedAt)}
+                      {formatDate(row.joinedAt, { dateStyle: 'medium' })}
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-2">
@@ -551,7 +503,7 @@ export function InstructorsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">
-                  Instructor profile
+                  {t('instructorProfile.profile')}
                 </p>
                 <h2 className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">
                   {selectedInstructor.name}
@@ -562,31 +514,35 @@ export function InstructorsPage() {
                   statusStyles[selectedInstructor.status]
                 }`}
               >
-                {selectedInstructor.status}
+                {selectedInstructor.status === 'active'
+                  ? t('common.active')
+                  : selectedInstructor.status === 'inactive'
+                    ? t('common.inactive')
+                    : t('common.suspended')}
               </span>
             </div>
 
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('common.email')}</p>
                 <p className="mt-2 font-medium text-gray-900 dark:text-white">
                   {selectedInstructor.email}
                 </p>
               </div>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Specialty</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructors.specialty')}</p>
                 <p className="mt-2 font-medium text-gray-900 dark:text-white">
-                  {selectedInstructor.specialty}
+                  {formatSpecialty(selectedInstructor.specialty)}
                 </p>
               </div>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Joined</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructors.joined')}</p>
                 <p className="mt-2 font-medium text-gray-900 dark:text-white">
-                  {formatDate(selectedInstructor.joinedAt)}
+                  {formatDate(selectedInstructor.joinedAt, { dateStyle: 'medium' })}
                 </p>
               </div>
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Assigned courses</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('instructorProfile.assignedCourses')}</p>
                 <p className="mt-2 font-medium text-gray-900 dark:text-white">
                   {selectedInstructor.courseIds.length}
                 </p>
@@ -594,7 +550,7 @@ export function InstructorsPage() {
             </div>
 
             <div className="mt-5 rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Permissions</p>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('instructorProfile.permissions')}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {Object.entries(selectedInstructor.permissions).map(([key, value]) => (
                   <span
@@ -605,7 +561,7 @@ export function InstructorsPage() {
                         : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
                     }`}
                   >
-                    {key.replace(/([A-Z])/g, ' $1').trim()}
+                    {permissionLabel(key)}
                   </span>
                 ))}
               </div>
@@ -616,10 +572,10 @@ export function InstructorsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-400 dark:text-gray-500">
-                  Course overview
+                  {t('instructorProfile.courseOverview')}
                 </p>
                 <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
-                  Assigned learning tracks
+                  {t('instructorProfile.assignedTracks')}
                 </h2>
               </div>
               <BriefcaseBusiness className="h-5 w-5 text-violet-600" />
@@ -628,7 +584,7 @@ export function InstructorsPage() {
             <div className="mt-5 space-y-3">
               {selectedInstructor.assignedCourses.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  This instructor has no assigned courses yet.
+                  {t('instructorProfile.noAssignedCourses')}
                 </div>
               ) : (
                 selectedInstructor.assignedCourses.map((course) => (

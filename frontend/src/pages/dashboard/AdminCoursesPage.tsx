@@ -1,29 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import {
   BookOpen,
   Eye,
   PencilLine,
-  Power,
   Search,
   Trash2,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { AdminCoursesEnhancements } from '@/components/dashboard/AdminCoursesEnhancements';
 import { useTranslation } from '@/context/I18nContext';
-import {
-  deleteCourseRecord,
-  readLocalCourses,
-  readLocalEnrollments,
-  readLocalUsers,
-  type LocalCourseRecord,
-  writeLocalCourses,
-} from '@/lib/localDb';
+import { fetchAdminCourses, deleteAdminCourse, updateAdminCourseStatus, type AdminCourse } from '@/lib/adminCourseRepository';
+import { fetchAdminInstructors, type AdminInstructor } from '@/lib/adminInstructorRepository';
 
-type CourseAdminRow = LocalCourseRecord & {
+type CourseAdminRow = AdminCourse & {
   instructorName: string;
   enrollmentCount: number;
-  averageProgress: number;
+  averageProgress: number | null;
 };
 
 export function AdminCoursesPage() {
@@ -32,45 +25,47 @@ export function AdminCoursesPage() {
   const { t, formatNumber } = useTranslation();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [courses, setCourses] = useState<AdminCourse[]>([]);
+  const [instructors, setInstructors] = useState<AdminInstructor[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  if (!profile) {
-    return null;
-  }
+  useEffect(() => {
+    if (profile?.role !== 'admin') return;
+    let isMounted = true;
+    setIsLoading(true);
+    setLoadError(null);
 
-  if (profile.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
-  }
+    Promise.allSettled([fetchAdminCourses(), fetchAdminInstructors()]).then(([courseResult, instructorResult]) => {
+      if (!isMounted) return;
+      if (courseResult.status === 'fulfilled') {
+        setCourses(courseResult.value);
+      } else {
+        console.error('Failed to load admin courses:', courseResult.reason);
+        setLoadError(t('adminCourses.loadError'));
+      }
+      if (instructorResult.status === 'fulfilled') setInstructors(instructorResult.value);
+      setIsLoading(false);
+    });
 
-  const users = useMemo(() => readLocalUsers(), [refreshKey]);
-  const courses = useMemo(() => readLocalCourses(), [refreshKey]);
-  const enrollments = useMemo(() => readLocalEnrollments(), [refreshKey]);
+    return () => {
+      isMounted = false;
+    };
+  }, [profile?.role, t]);
 
   const courseRows = useMemo<CourseAdminRow[]>(() => {
     const instructorMap = new Map(
-      users
-        .filter((user) => user.role === 'instructor')
-        .map((user) => [user.id, user.profile?.full_name ?? user.name]),
+      instructors.map((instructor) => [instructor.id, instructor.name]),
     );
 
     return courses
       .map((course) => {
-        const courseEnrollments = enrollments.filter((entry) => entry.courseId === course.id);
-        const enrollmentCount = new Set(courseEnrollments.map((entry) => entry.studentId)).size;
-        const averageProgress = enrollmentCount
-          ? Math.round(
-              courseEnrollments.reduce(
-                (sum, entry) => sum + Number(entry.progressPercentage ?? entry.progress ?? 0),
-                0,
-              ) / courseEnrollments.length,
-            )
-          : 0;
-
         return {
           ...course,
-          instructorName: instructorMap.get(course.instructorId) ?? 'Unknown instructor',
-          enrollmentCount,
-          averageProgress,
+          instructorName: instructorMap.get(course.instructor_id) ?? course.instructor_id,
+          enrollmentCount: Number(course.enrollment_count ?? 0),
+          averageProgress: null,
         };
       })
       .filter((course) => {
@@ -78,42 +73,49 @@ export function AdminCoursesPage() {
           !search ||
           course.title.toLowerCase().includes(search.toLowerCase()) ||
           course.instructorName.toLowerCase().includes(search.toLowerCase()) ||
-          course.category.toLowerCase().includes(search.toLowerCase());
+          (course.category ?? '').toLowerCase().includes(search.toLowerCase());
 
         const matchesStatus =
           statusFilter === 'all' ||
-          (statusFilter === 'published' && (course.status === 'published' || course.isPublished)) ||
-          (statusFilter === 'draft' && !(course.status === 'published' || course.isPublished));
+          (statusFilter === 'published' && (course.status === 'published' || course.is_published)) ||
+          (statusFilter === 'draft' && !(course.status === 'published' || course.is_published));
 
         return matchesSearch && matchesStatus;
       });
-  }, [courses, enrollments, search, statusFilter, users]);
+  }, [courses, instructors, search, statusFilter]);
 
-  const toggleCourseStatus = (courseId: string) => {
-    const nextCourses: LocalCourseRecord[] = courses.map((course) => {
-      if (course.id !== courseId) return course;
+  if (!profile) return null;
+  if (profile.role !== 'admin') return <Navigate to="/dashboard" replace />;
 
-      const nextStatus: LocalCourseRecord['status'] = course.status === 'published' ? 'draft' : 'published';
-      return {
-        ...course,
-        status: nextStatus,
-        isPublished: nextStatus === 'published',
-      } satisfies LocalCourseRecord;
-    });
-
-    writeLocalCourses(nextCourses);
-    setRefreshKey((current) => current + 1);
+  const toggleCourseStatus = async (courseId: string) => {
+    const course = courses.find((entry) => entry.id === courseId);
+    if (!course) return;
+    const nextStatus = course.status === 'published' || course.is_published ? 'draft' : 'published';
+    setActionError(null);
+    try {
+      const updated = await updateAdminCourseStatus(courseId, nextStatus);
+      setCourses((current) => current.map((entry) => entry.id === courseId ? { ...entry, ...updated } : entry));
+    } catch (reason) {
+      console.error('Failed to update course status:', reason);
+      setActionError(t('adminCourses.moderationError'));
+    }
   };
 
-  const handleDeleteCourse = async (course: LocalCourseRecord) => {
+  const handleDeleteCourse = async (course: AdminCourse) => {
     const confirmed = window.confirm(
       `${t('common.deleteConfirm')} "${course.title}"`,
     );
 
     if (!confirmed) return;
 
-    await deleteCourseRecord(course);
-    setRefreshKey((current) => current + 1);
+    setActionError(null);
+    try {
+      await deleteAdminCourse(course.id);
+      setCourses((current) => current.filter((entry) => entry.id !== course.id));
+    } catch (reason) {
+      console.error('Failed to delete course:', reason);
+      setActionError(t('adminCourses.moderationError'));
+    }
   };
 
   const openCoursePreview = (courseId: string) => {
@@ -174,6 +176,10 @@ export function AdminCoursesPage() {
         </div>
       </div>
 
+      {(loadError || actionError) && (
+        <p className="text-sm text-red-600" role="alert">{loadError ?? actionError}</p>
+      )}
+
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
           <div>
@@ -201,12 +207,16 @@ export function AdminCoursesPage() {
               </tr>
             </thead>
             <tbody>
-              {courseRows.map((course) => (
+              {isLoading ? (
+                <tr><td colSpan={7} className="px-5 py-8 text-center text-sm text-gray-500">{t('common.loading')}</td></tr>
+              ) : courseRows.length === 0 ? (
+                <tr><td colSpan={7} className="px-5 py-8 text-center text-sm text-gray-500">{t('courses.noCourses')}</td></tr>
+              ) : courseRows.map((course) => (
                 <tr key={course.id} className="border-t border-gray-200 dark:border-gray-800">
                   <td className="px-5 py-4">
                     <div>
                       <p className="font-semibold text-gray-900 dark:text-white">{course.title}</p>
-                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{course.aiModel ?? t('courses.generalLearning')}</p>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{course.ai_model ?? t('courses.generalLearning')}</p>
                     </div>
                   </td>
                   <td className="px-5 py-4 text-sm text-gray-600 dark:text-gray-300">{course.instructorName}</td>
@@ -216,16 +226,16 @@ export function AdminCoursesPage() {
                       type="button"
                       onClick={() => toggleCourseStatus(course.id)}
                       className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
-                        course.status === 'published' || course.isPublished
+                          course.status === 'published' || course.is_published
                           ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
                           : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
                       }`}
                     >
-                      {course.status === 'published' || course.isPublished ? t('common.published') : t('common.draft')}
+                      {course.status === 'published' || course.is_published ? t('common.published') : t('common.draft')}
                     </button>
                   </td>
                   <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-200">{course.enrollmentCount}</td>
-                  <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-200">{course.averageProgress}%</td>
+                  <td className="px-5 py-4 text-sm text-gray-700 dark:text-gray-200">{course.averageProgress === null ? '—' : `${course.averageProgress}%`}</td>
                   <td className="px-5 py-4">
                     <div className="flex justify-end gap-2">
                       <button

@@ -2,7 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import type { MfaChallenge } from '@/context/AuthContext';
 import { AuthLayout } from '@/components/auth/AuthLayout';
+import { MfaChallengeForm } from '@/components/auth/MfaChallengeForm';
 import { isValidEmail, sanitizeEmail, validatePassword } from '@/lib/validation';
 import { useTranslation } from '@/context/I18nContext';
 import { localizedRuntimeError } from '@/lib/errorMessages';
@@ -15,6 +17,7 @@ export function SignInPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mfaChallenge, setMfaChallenge] = useState<MfaChallenge | null>(null);
 
   if (!authLoading && user) return <Navigate to="/dashboard" replace />;
 
@@ -37,7 +40,12 @@ export function SignInPage() {
 
     setLoading(true);
 
-    const { error: signInError } = await signIn(sanitizedEmail, password.trim());
+    const { error: signInError, mfaChallenge: nextChallenge } = await signIn(sanitizedEmail, password.trim());
+    if (nextChallenge) {
+      setMfaChallenge(nextChallenge);
+      setLoading(false);
+      return;
+    }
     if (signInError) {
       setError(localizedRuntimeError(new Error(signInError), signInError));
       setLoading(false);
@@ -49,6 +57,10 @@ export function SignInPage() {
       title={t('auth.welcomeBack')}
       subtitle={t('auth.signInSubtitle')}
     >
+      {mfaChallenge ? (
+        <MfaChallengeForm challenge={mfaChallenge} onCancel={() => setMfaChallenge(null)} />
+      ) : (
+      <>
       <form onSubmit={handleSubmit} className="space-y-5">
         {error && (
           <div className="flex items-start gap-2.5 rounded-lg bg-error-50 px-4 py-3 text-sm text-error-700 dark:bg-error-950/40 dark:text-error-300">
@@ -132,6 +144,8 @@ export function SignInPage() {
           {t('auth.createAccount')}
         </Link>
       </p>
+      </>
+      )}
     </AuthLayout>
   );
 }

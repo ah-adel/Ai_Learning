@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   BookOpen,
@@ -10,7 +10,6 @@ import {
   X,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AITutorChat } from '@/components/dashboard/AITutorChat';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { StatCard } from '@/components/ui/StatCard';
@@ -24,6 +23,8 @@ import {
   type LocalCourseRecord,
   writeLocalEnrollments,
 } from '@/lib/localDb';
+
+const AITutorChat = lazy(() => import('@/components/dashboard/AITutorChat').then((module) => ({ default: module.AITutorChat })));
 
 type EnrolledCourse = {
   id: string;
@@ -417,7 +418,11 @@ export const StudentDashboardPage = memo(function StudentDashboardPage() {
             </div>
 
             <div className="max-h-[75vh] overflow-y-auto overscroll-contain">
-              <AITutorChat />
+              {isTutorOpen && (
+                <Suspense fallback={<div className="min-h-48" />}>
+                  <AITutorChat />
+                </Suspense>
+              )}
             </div>
           </div>
         </div>

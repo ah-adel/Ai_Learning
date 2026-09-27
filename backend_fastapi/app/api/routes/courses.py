@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.core.security import get_current_user
 from app.db import (
     create_course_record,
     create_course_review,
@@ -13,11 +14,11 @@ from app.db import (
     get_all_courses,
     get_course_by_id,
     get_courses_for_instructor,
+    get_platform_admin_settings,
     get_public_courses,
     get_public_platform_stats,
     get_student_enrolled_courses,
     is_student_enrolled,
-    get_user_by_id,
     upsert_enrollment,
 )
 from app.schemas.common import ApiErrorResponse, ApiSuccessResponse
@@ -65,15 +66,7 @@ class CourseReviewRequest(BaseModel):
 
 
 def _get_current_user(authorization: str | None) -> dict[str, Any] | None:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        return None
-
-    token = authorization.split(" ", 1)[1].strip()
-    if not token:
-        return None
-
-    user = get_user_by_id(token)
-    return user
+    return get_current_user(authorization)
 
 
 @router.get(
@@ -258,7 +251,10 @@ async def create_course(payload: CourseCreateRequest, authorization: str | None 
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "You can only create courses for your own instructor profile."})
 
     requested_status = (payload.status or "").strip().lower()
-    if requested_status in {"published", "approved"}:
+    auto_publish = bool(get_platform_admin_settings().get("autoPublishCourses"))
+    if auto_publish:
+        normalized_status = "published"
+    elif requested_status in {"published", "approved"}:
         normalized_status = "published"
     elif requested_status in {"draft", "review", "archived", "rejected"}:
         normalized_status = "draft" if requested_status in {"draft", "archived", "rejected"} else "review"
@@ -267,7 +263,7 @@ async def create_course(payload: CourseCreateRequest, authorization: str | None 
     else:
         normalized_status = "draft"
 
-    publish_flag = payload.is_published if payload.is_published is not None else normalized_status == "published"
+    publish_flag = True if auto_publish else payload.is_published if payload.is_published is not None else normalized_status == "published"
 
     course_data = {
         "id": payload.id,

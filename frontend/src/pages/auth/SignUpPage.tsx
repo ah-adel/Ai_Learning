@@ -13,9 +13,10 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import type { MfaChallenge } from '@/context/AuthContext';
 import { AuthLayout } from '@/components/auth/AuthLayout';
-import { isValidEmail, sanitizeEmail, sanitizeText, validateDisplayName, validatePassword } from '@/lib/validation';
-import type { UserRole } from '@/types/database.types';
+import { MfaChallengeForm } from '@/components/auth/MfaChallengeForm';
+import { isValidEmail, sanitizeEmail, validateDisplayName, validatePassword } from '@/lib/validation';
 import { useTranslation } from '@/context/I18nContext';
 import { localizedRuntimeError } from '@/lib/errorMessages';
 
@@ -52,6 +53,7 @@ export function SignUpPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [mfaChallenge, setMfaChallenge] = useState<MfaChallenge | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -78,12 +80,18 @@ export function SignUpPage() {
 
     setLoading(true);
 
-    const { error: signUpError } = await signUp(
+    const { error: signUpError, mfaChallenge: nextChallenge } = await signUp(
       sanitizedEmail,
       password.trim(),
       sanitizedName,
       selectedRole,
     );
+
+    if (nextChallenge) {
+      setMfaChallenge(nextChallenge);
+      setLoading(false);
+      return;
+    }
 
     if (signUpError) {
       setError(localizedRuntimeError(new Error(signUpError), signUpError));
@@ -96,6 +104,17 @@ export function SignUpPage() {
   }
 
   if (!authLoading && user) return <Navigate to="/dashboard" replace />;
+
+  if (mfaChallenge) {
+    return (
+      <AuthLayout title={t('auth.mfaTitle')} subtitle={t('auth.mfaSubtitle')}>
+        <MfaChallengeForm challenge={mfaChallenge} />
+        <p className="mt-5 text-center text-sm text-gray-500 dark:text-gray-400">
+          <Link to="/auth/sign-in" className="font-semibold text-primary-600">{t('auth.signIn')}</Link>
+        </p>
+      </AuthLayout>
+    );
+  }
 
   if (success) {
     return (

@@ -17,22 +17,16 @@ import {
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { useTranslation } from '@/context/I18nContext';
+import { useTranslation, type TranslationKey } from '@/context/I18nContext';
 import {
   createCourseForInstructor,
   fetchInstructorCourses,
-  resolveHostedLessonMediaPath,
   updateCourseForInstructor,
 } from '@/lib/courseRepository';
 import { fetchExternalVideoDuration, uploadMediaFile } from '@/services/api';
 import {
   deleteCourseRecord,
-  deleteLessonMediaIfUnused,
-  deleteModuleMediaIfUnused,
   readLocalCourses,
-  readLocalUsers,
-  writeLocalCourses,
-  writeLocalUsers,
   type LocalCourseRecord,
 } from '@/lib/localDb';
 
@@ -103,18 +97,23 @@ const getDurationParts = (totalSeconds: number) => {
   };
 };
 
-const formatLessonDuration = (durationSeconds: number) => {
+const formatLessonDuration = (durationSeconds: number, language: 'ar' | 'en' = 'en') => {
   const { hours, minutes, seconds } = getDurationParts(durationSeconds);
+  const numberFormatter = new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US');
 
   if (hours > 0) {
-    return `${hours}h ${minutes}m ${seconds}s`;
+    return language === 'ar'
+      ? `${numberFormatter.format(hours)} س ${numberFormatter.format(minutes)} د ${numberFormatter.format(seconds)} ث`
+      : `${hours}h ${minutes}m ${seconds}s`;
   }
 
   if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
+    return language === 'ar'
+      ? `${numberFormatter.format(minutes)} د ${numberFormatter.format(seconds)} ث`
+      : `${minutes}m ${seconds}s`;
   }
 
-  return `${seconds}s`;
+  return language === 'ar' ? `${numberFormatter.format(seconds)} ث` : `${seconds}s`;
 };
 
 const getVideoEmbedUrl = (value: string) => {
@@ -202,9 +201,6 @@ const readVideoDurationFromFile = (file: File) => new Promise<number>((resolve) 
   };
 });
 
-const buildHostedMediaAssetPath = (file: File, kind: 'video' | 'attachment') =>
-  resolveHostedLessonMediaPath(file.name, kind);
-
 const getUploadKindFromFile = (file: File, fallbackKind: 'video' | 'attachment') => {
   const mimeType = file.type?.toLowerCase() ?? '';
   if (mimeType.startsWith('video/') || fallbackKind === 'video') {
@@ -265,7 +261,7 @@ function createClientId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
-const emptyDraft = (): CourseDraft => ({
+const emptyDraft = (defaults: { moduleTitle: string; lessonTitle: string; lessonSummary: string }): CourseDraft => ({
   id: createClientId(),
   title: '',
   description: '',
@@ -276,12 +272,12 @@ const emptyDraft = (): CourseDraft => ({
   modules: [
     {
       id: createClientId(),
-      title: 'Module 1',
+      title: defaults.moduleTitle,
       lessons: [{
         id: createClientId(),
-        title: 'Welcome lesson',
+        title: defaults.lessonTitle,
         duration: 12 * 60,
-        summary: 'Introduce the course and make the first learning milestone clear.',
+        summary: defaults.lessonSummary,
         type: 'Video',
         videoName: null,
         videoUrl: null,
@@ -316,16 +312,52 @@ const buildDraftFromCourse = (course: Partial<CourseDraft> & { id: string; title
 });
 
 export function InstructorDashboardPage() {
-  const { t } = useTranslation();
+  const { t, direction, language } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const { session } = useAuth();
+  const createEmptyDraft = () => emptyDraft({
+    moduleTitle: t('courseBuilder.moduleNumber', { number: 1 }),
+    lessonTitle: t('courseBuilder.welcomeLesson'),
+    lessonSummary: t('courseBuilder.lessonSummaryDefault'),
+  });
+  const categoryTranslationKeys: Record<string, TranslationKey> = {
+    Design: 'courseBuilder.categoryDesign',
+    Development: 'courseBuilder.categoryDevelopment',
+    Data: 'courseBuilder.categoryData',
+    'AI & Automation': 'courseBuilder.categoryAiAutomation',
+    Marketing: 'courseBuilder.categoryMarketing',
+    Business: 'courseBuilder.categoryBusiness',
+    Productivity: 'courseBuilder.categoryProductivity',
+    Leadership: 'courseBuilder.categoryLeadership',
+  };
+  const getCategoryLabel = (category: string) => {
+    const translationKey = categoryTranslationKeys[category];
+    return translationKey ? t(translationKey) : category;
+  };
+  const localizeBuilderError = (message: string) => {
+    const errorKeys: Record<string, TranslationKey> = {
+      'Each lesson must include a title.': 'courseBuilder.validationLessonTitle',
+      'Each lesson must include a valid video duration.': 'courseBuilder.validationLessonDuration',
+      'Each lesson needs either a valid video URL, uploaded video, or document attachment like a PDF.': 'courseBuilder.validationLessonMedia',
+      'Upload cancelled.': 'courseBuilder.uploadCancelled',
+      'The uploaded file could not be stored. Please try another file or use an external link.': 'courseBuilder.uploadFallbackError',
+      'The uploaded attachment could not be stored. Please choose another file or provide a direct URL.': 'courseBuilder.invalidAttachmentPath',
+      'Upload did not return a valid hosted video path.': 'courseBuilder.invalidVideoPath',
+      'Upload did not return a valid hosted attachment path.': 'courseBuilder.invalidAttachmentPath',
+      'You must be signed in as an instructor to save a course.': 'courseBuilder.saveError',
+    };
+    const translationKey = errorKeys[message];
+    if (translationKey) return t(translationKey);
+    return language === 'ar' ? t('courseBuilder.genericError') : message;
+  };
   const [courses, setCourses] = useState<CourseRow[]>(initialCourses);
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
+  const [isEditingCourse, setIsEditingCourse] = useState(false);
   const [builderStep, setBuilderStep] = useState(1);
   const [builderError, setBuilderError] = useState<string | null>(null);
   const [courseLoadError, setCourseLoadError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<CourseDraft>(emptyDraft());
+  const [draft, setDraft] = useState<CourseDraft>(createEmptyDraft);
   const [isSavingCourse, setIsSavingCourse] = useState(false);
   const [uploadStatusByKey, setUploadStatusByKey] = useState<
     Record<string, { progress: number; isUploading: boolean; error: string | null; loadedBytes: number; totalBytes: number; abortController?: AbortController }>
@@ -365,6 +397,7 @@ export function InstructorDashboardPage() {
           description: course.description ?? '',
           category: course.category ?? 'General',
           aiModel: course.aiModel ?? 'Coach Pro',
+          difficulty: course.difficulty ?? 'Beginner',
           status: course.isPublished ? 'Published' : 'Draft',
           students: 0,
           completion: 0,
@@ -454,13 +487,13 @@ export function InstructorDashboardPage() {
         ...current.modules,
         {
           id: createClientId(),
-          title: `Module ${current.modules.length + 1}`,
+          title: t('courseBuilder.moduleNumber', { number: current.modules.length + 1 }),
           lessons: [
             {
               id: createClientId(),
-              title: 'New lesson',
+              title: t('courseBuilder.newLesson'),
               duration: 10 * 60,
-              summary: 'Introduce the new topic to learners.',
+              summary: t('courseBuilder.newLessonSummary'),
               type: 'Video',
               videoName: null,
               videoUrl: null,
@@ -485,9 +518,9 @@ export function InstructorDashboardPage() {
                 ...module.lessons,
                 {
                   id: createClientId(),
-                  title: `Lesson ${module.lessons.length + 1}`,
+                  title: t('courseBuilder.lessonNumber', { number: module.lessons.length + 1 }),
                   duration: 12 * 60,
-                  summary: 'Explain the concept clearly and provide a practical recap.',
+                  summary: t('courseBuilder.lessonSummaryDefault'),
                   type: 'Video',
                   videoName: null,
                   videoUrl: null,
@@ -502,18 +535,6 @@ export function InstructorDashboardPage() {
   };
 
   const removeLesson = async (moduleIndex: number, lessonId: string) => {
-    const courseDraft = draft;
-    const module = courseDraft.modules[moduleIndex];
-    const targetLesson = module?.lessons.find((lesson) => lesson.id === lessonId);
-
-    if (courseDraft.id && targetLesson) {
-      try {
-        await deleteLessonMediaIfUnused(courseDraft.id, lessonId, targetLesson);
-      } catch (error) {
-        console.warn('Lesson media cleanup failed while removing a lesson draft.', error);
-      }
-    }
-
     setDraft((current) => ({
       ...current,
       modules: current.modules.map((module, index) =>
@@ -729,17 +750,18 @@ export function InstructorDashboardPage() {
     resetUploadStatusState();
     setBuilderError(null);
     setBuilderStep(1);
+    setIsEditingCourse(Boolean(courseOverride));
     setDraft(
       courseOverride
         ? buildDraftFromCourse(courseOverride)
-        : emptyDraft(),
+        : createEmptyDraft(),
     );
     setIsBuilderOpen(true);
   };
 
   const saveCourse = async () => {
     if (!session?.userId) {
-      setBuilderError('You must be signed in as an instructor to save a course.');
+      setBuilderError(t('courseBuilder.saveError'));
       return;
     }
 
@@ -852,7 +874,7 @@ export function InstructorDashboardPage() {
       resetUploadStatusState();
       setIsBuilderOpen(false);
       setBuilderStep(1);
-      setDraft(emptyDraft());
+      setDraft(createEmptyDraft());
     } catch (error) {
       console.error('Failed to save course:', error);
       const message = error instanceof Error ? error.message : 'Course could not be saved. Please try again.';
@@ -865,11 +887,12 @@ export function InstructorDashboardPage() {
   const handleDeleteCourse = async () => {
     if (!draft.id || !session?.userId) return;
 
-    const confirmed = window.confirm(`Delete "${draft.title || 'this course'}"? This removes the course and all related modules, lessons, and uploaded content.`);
+    const confirmed = window.confirm(t('courseBuilder.deleteConfirm', { name: draft.title || t('courseBuilder.untitledCourse') }));
     if (!confirmed) return;
 
+    const existingCourse = readLocalCourses().find((course) => course.id === draft.id);
     const courseToDelete: LocalCourseRecord = {
-      ...readLocalCourses().find((course) => course.id === draft.id),
+      ...existingCourse,
       id: draft.id,
       title: draft.title.trim() || 'Untitled course',
       description: draft.description.trim() || 'Course deleted from instructor workspace.',
@@ -880,6 +903,7 @@ export function InstructorDashboardPage() {
       thumbnail: null,
       aiModel: draft.aiModel,
       difficulty: 'Beginner',
+      reviews: existingCourse?.reviews ?? [],
       isPublished: draft.status === 'Published',
       createdAt: new Date().toISOString(),
       modules: draft.modules.map((module) => ({
@@ -905,7 +929,7 @@ export function InstructorDashboardPage() {
       setBuilderError(null);
       setIsBuilderOpen(false);
       setBuilderStep(1);
-      setDraft(emptyDraft());
+      setDraft(createEmptyDraft());
       navigate('/instructor', { replace: true });
     } catch (error) {
       setBuilderError(error instanceof Error ? error.message : 'Course could not be deleted.');
@@ -1122,15 +1146,15 @@ export function InstructorDashboardPage() {
       </div>
 
       {isBuilderOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-950/60 p-4 backdrop-blur-sm">
+        <div dir={direction} className="fixed inset-0 z-50 overflow-y-auto bg-gray-950/60 p-4 backdrop-blur-sm">
           <div className="mx-auto my-4 w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-3xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-600 dark:text-primary-300">
-                  Course builder
+                  {t('courseBuilder.builder')}
                 </p>
                 <h2 className="mt-1 text-xl font-bold text-gray-900 dark:text-white">
-                  {draft.id ? 'Edit course' : 'Create a new course'}
+                  {isEditingCourse ? t('courseBuilder.editCourse') : t('courseBuilder.createCourse')}
                 </h2>
               </div>
 
@@ -1142,7 +1166,7 @@ export function InstructorDashboardPage() {
                   setIsBuilderOpen(false);
                 }}
                 className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                aria-label="Close builder"
+                aria-label={t('common.close')}
               >
                 <X className="h-5 w-5" />
               </button>
@@ -1164,7 +1188,11 @@ export function InstructorDashboardPage() {
                     <span
                       className={builderStep === step ? 'font-medium text-gray-900 dark:text-white' : ''}
                     >
-                      {step === 1 ? 'Basics' : step === 2 ? 'Modules' : 'Publish'}
+                      {step === 1
+                        ? t('courseBuilder.basics')
+                        : step === 2
+                          ? t('courseBuilder.modules')
+                          : t('courseBuilder.publish')}
                     </span>
                     {step < 3 && <ChevronRight className="directional-icon h-4 w-4 text-gray-400" />}
                   </div>
@@ -1176,59 +1204,64 @@ export function InstructorDashboardPage() {
               {builderStep === 1 && (
                 <div className="space-y-4">
                   <div>
-                    <label className="label-text">Course title</label>
+                    <label className="label-text">{t('courseBuilder.courseTitle')}</label>
                     <input
                       value={draft.title}
                       onChange={(event) => updateDraft('title', event.target.value)}
                       className="input-field"
-                      placeholder="e.g. Prompt Engineering Masterclass"
+                      placeholder={t('courseBuilder.titlePlaceholder')}
                     />
                   </div>
 
                   <div>
-                    <label className="label-text">Description</label>
+                    <label className="label-text">{t('courseBuilder.description')}</label>
                     <textarea
                       value={draft.description}
                       onChange={(event) => updateDraft('description', event.target.value)}
                       rows={5}
                       className="input-field resize-none"
-                      placeholder="Describe what learners will master in this course..."
+                      placeholder={t('courseBuilder.descriptionPlaceholder')}
                     />
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
-                      <label className="label-text">Category</label>
+                      <label className="label-text">{t('courseBuilder.category')}</label>
                       <input
-                        value={draft.category}
+                        value={getCategoryLabel(draft.category)}
                         list="course-category-suggestions"
-                        onChange={(event) => updateDraft('category', event.target.value)}
+                        onChange={(event) => {
+                          const selectedCategory = courseCategorySuggestions.find(
+                            (category) => getCategoryLabel(category) === event.target.value,
+                          );
+                          updateDraft('category', selectedCategory ?? event.target.value);
+                        }}
                         className="input-field"
-                        placeholder="Type or choose a category"
+                        placeholder={t('courseBuilder.categoryPlaceholder')}
                       />
                       <datalist id="course-category-suggestions">
                         {courseCategorySuggestions.map((option) => (
-                          <option key={option} value={option} />
+                          <option key={option} value={getCategoryLabel(option)} />
                         ))}
                       </datalist>
                     </div>
 
                     <div>
-                      <label className="label-text">Difficulty</label>
+                      <label className="label-text">{t('courseBuilder.difficulty')}</label>
                       <select
                         value={draft.difficulty}
                         onChange={(event) => updateDraft('difficulty', event.target.value as CourseDifficulty)}
                         className="input-field"
                       >
-                        <option value="Beginner">Beginner</option>
-                        <option value="Intermediate">Intermediate</option>
-                        <option value="Advanced">Advanced</option>
+                        <option value="Beginner">{t('courseBuilder.beginner')}</option>
+                        <option value="Intermediate">{t('courseBuilder.intermediate')}</option>
+                        <option value="Advanced">{t('courseBuilder.advanced')}</option>
                       </select>
                     </div>
                   </div>
 
                   <div>
-                    <label className="label-text">AI model assignment</label>
+                    <label className="label-text">{t('courseBuilder.aiModelAssignment')}</label>
                     <select
                       value={draft.aiModel}
                       onChange={(event) => updateDraft('aiModel', event.target.value)}
@@ -1247,10 +1280,10 @@ export function InstructorDashboardPage() {
               {builderStep === 2 && (
                 <div className="space-y-5">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Modules and lessons</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{t('courseBuilder.modulesAndLessons')}</h3>
                     <button type="button" onClick={addModule} className="btn-secondary">
                       <Plus className="h-4 w-4" />
-                      Add module
+                      {t('courseBuilder.addModule')}
                     </button>
                   </div>
 
@@ -1271,23 +1304,14 @@ export function InstructorDashboardPage() {
                         />
                         <button
                           type="button"
-                          onClick={async () => {
-                            const moduleToRemove = draft.modules[moduleIndex];
-                            if (draft.id && moduleToRemove) {
-                              try {
-                                await deleteModuleMediaIfUnused(draft.id, moduleToRemove.id, moduleToRemove);
-                              } catch (error) {
-                                console.warn('Module media cleanup failed while removing a module draft.', error);
-                              }
-                            }
-
+                          onClick={() => {
                             setDraft((current) => ({
                               ...current,
                               modules: current.modules.filter((_, index) => index !== moduleIndex),
                             }));
                           }}
                           className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800 dark:hover:text-red-400"
-                          aria-label="Remove module"
+                          aria-label={t('courseBuilder.removeModule')}
                         >
                           <X className="h-4 w-4" />
                         </button>
@@ -1323,13 +1347,13 @@ export function InstructorDashboardPage() {
                                   className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"
                                 />
                                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200">
-                                  {formatLessonDuration(lesson.duration)}
+                                  {formatLessonDuration(lesson.duration, language)}
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => removeLesson(moduleIndex, lesson.id)}
                                   className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800 dark:hover:text-red-400"
-                                  aria-label="Delete lesson"
+                                  aria-label={t('courseBuilder.deleteLesson')}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </button>
@@ -1338,7 +1362,9 @@ export function InstructorDashboardPage() {
                               <div className="grid gap-2 md:grid-cols-3">
                                 {(['hours', 'minutes', 'seconds'] as const).map((unit) => (
                                   <label key={unit} className="block text-xs text-gray-500 dark:text-gray-400">
-                                    <span className="mb-1 block uppercase tracking-[0.12em]">{unit}</span>
+                                    <span className="mb-1 block uppercase tracking-[0.12em]">
+                                      {t(`courseBuilder.${unit}` as 'courseBuilder.hours' | 'courseBuilder.minutes' | 'courseBuilder.seconds')}
+                                    </span>
                                     <input
                                       type="number"
                                       min={0}
@@ -1371,13 +1397,13 @@ export function InstructorDashboardPage() {
                                   </div>
                                 ) : (
                                   <div className="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                                    No video uploaded yet
+                                    {t('courseBuilder.noVideo')}
                                   </div>
                                 )}
 
                                 <div className="grid gap-3 md:grid-cols-2">
 <label className="block md:col-span-2">
-                                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">External video URL</span>
+                                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('courseBuilder.externalVideoUrl')}</span>
                                   <input
                                     type="url"
                                     value={lesson.videoUrl ?? ''}
@@ -1427,13 +1453,13 @@ export function InstructorDashboardPage() {
                                         // Fallback to the stored lesson duration when metadata cannot be resolved.
                                       });
                                     }}
-                                    placeholder="https://youtube.com/watch?v=... or https://example.com/video.mp4"
+                                    placeholder={t('courseBuilder.videoUrlPlaceholder')}
                                     className="input-field"
                                   />
                                 </label>
 
                                 <label className="block">
-                                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Video file</span>
+                                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('courseBuilder.videoFile')}</span>
                                   <input
                                     type="file"
                                     accept="video/*"
@@ -1447,7 +1473,7 @@ export function InstructorDashboardPage() {
                                 </label>
 
                                 <label className="block">
-                                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">Attachment</span>
+                                  <span className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('courseBuilder.attachment')}</span>
                                   <input
                                     type="file"
                                     accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.png,.jpg,.jpeg"
@@ -1477,14 +1503,20 @@ export function InstructorDashboardPage() {
                                         ) : (
                                           <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
                                         )}
-                                        <span>{uploadState.error ? 'Upload failed' : uploadState.isUploading ? `${kind === 'video' ? 'Video' : 'Document'} upload` : 'Upload complete'}</span>
+                                        <span>
+                                          {uploadState.error
+                                            ? t('courseBuilder.uploadFailed')
+                                            : uploadState.isUploading
+                                              ? t(kind === 'video' ? 'courseBuilder.videoUpload' : 'courseBuilder.documentUpload')
+                                              : t('courseBuilder.uploadComplete')}
+                                        </span>
                                       </div>
-                                      <span>{uploadState.error ? 'Failed' : `${uploadState.progress}%`}</span>
+                                      <span>{uploadState.error ? t('courseBuilder.failed') : `${uploadState.progress}%`}</span>
                                     </div>
 
                                     <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400">
                                       <span>{formatFileSize(uploadState.loadedBytes)} / {formatFileSize(uploadState.totalBytes)}</span>
-                                      {!uploadState.error && !uploadState.isUploading && <span>Ready</span>}
+                                      {!uploadState.error && !uploadState.isUploading && <span>{t('courseBuilder.ready')}</span>}
                                     </div>
 
                                     <div className="h-2.5 overflow-hidden rounded-full bg-gray-200 shadow-sm dark:bg-gray-800">
@@ -1500,19 +1532,19 @@ export function InstructorDashboardPage() {
                                         onClick={() => cancelUpload(uploadKey)}
                                         className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
                                       >
-                                        Cancel upload
+                                        {t('courseBuilder.cancelUpload')}
                                       </button>
                                     )}
 
                                     {uploadState.error && (
-                                      <p className="text-[10px] text-red-600 dark:text-red-300">{uploadState.error}</p>
+                                      <p className="text-[10px] text-red-600 dark:text-red-300">{localizeBuilderError(uploadState.error)}</p>
                                     )}
                                   </div>
                                 );
                               })}
 
                               <label className="block">
-                                <span className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">External attachment URL</span>
+                                <span className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">{t('courseBuilder.externalAttachmentUrl')}</span>
                                 <input
                                   type="url"
                                   value={lesson.attachmentUrl ?? ''}
@@ -1538,17 +1570,17 @@ export function InstructorDashboardPage() {
                                       ),
                                     }));
                                   }}
-                                  placeholder="https://example.com/lesson-notes.pdf"
+                                  placeholder={t('courseBuilder.attachmentUrlPlaceholder')}
                                   className="input-field"
                                 />
                               </label>
 
                                 {(lesson.videoName || lesson.attachmentName) && (
                                   <div className="space-y-1 text-[11px] text-gray-500 dark:text-gray-400">
-                                    {lesson.videoName && <p>Video: {lesson.videoName}</p>}
+                                    {lesson.videoName && <p>{t('courseBuilder.videoName', { name: lesson.videoName })}</p>}
                                     {lesson.attachmentName && (
                                       <p>
-                                        Attachment: {' '}
+                                        {t('courseBuilder.attachmentName')}{' '}
                                         <a
                                           href={lesson.attachmentUrl ?? '#'}
                                           target="_blank"
@@ -1570,7 +1602,7 @@ export function InstructorDashboardPage() {
                       <div className="mt-4 flex justify-end">
                         <button type="button" onClick={() => addLesson(moduleIndex)} className="btn-secondary">
                           <Plus className="h-4 w-4" />
-                          Add lesson
+                          {t('courseBuilder.addLesson')}
                         </button>
                       </div>
                     </div>
@@ -1583,38 +1615,38 @@ export function InstructorDashboardPage() {
                   <div className="rounded-2xl border border-primary-200 bg-primary-50 p-4 dark:border-primary-800 dark:bg-primary-950/20">
                     <div className="flex items-center gap-2 text-primary-700 dark:text-primary-300">
                       <Sparkles className="h-4 w-4" />
-                      <span className="text-sm font-semibold">Ready to publish</span>
+                      <span className="text-sm font-semibold">{t('courseBuilder.readyToPublish')}</span>
                     </div>
-                    <h3 className="mt-3 text-2xl font-bold text-gray-900 dark:text-white">{draft.title || 'Untitled course'}</h3>
+                    <h3 className="mt-3 text-2xl font-bold text-gray-900 dark:text-white">{draft.title || t('courseBuilder.untitledCourse')}</h3>
                     <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                      {draft.description || 'Add a compelling description to help students understand the value of the course.'}
+                      {draft.description || t('courseBuilder.descriptionFallback')}
                     </p>
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="card p-4">
-                      <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">Category</p>
-                      <p className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{draft.category}</p>
+                      <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">{t('courseBuilder.courseCategory')}</p>
+                      <p className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{getCategoryLabel(draft.category)}</p>
                     </div>
                     <div className="card p-4">
-                      <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">AI model</p>
+                      <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">{t('courseBuilder.aiModel')}</p>
                       <p className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{draft.aiModel}</p>
                     </div>
                     <div className="card p-4">
-                      <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">Modules</p>
+                      <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">{t('courseBuilder.moduleCount')}</p>
                       <p className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{draft.modules.length}</p>
                     </div>
                   </div>
 
                   <label className="block max-w-sm">
-                    <span className="label-text">Student visibility</span>
+                    <span className="label-text">{t('courseBuilder.studentVisibility')}</span>
                     <select
                       value={draft.status}
                       onChange={(event) => updateDraft('status', event.target.value as CourseStatus)}
                       className="input-field"
                     >
-                      <option value="Published">Published - visible in Browse Courses</option>
-                      <option value="Draft">Draft - hidden from students</option>
+                      <option value="Published">{t('courseBuilder.publishedVisible')}</option>
+                      <option value="Draft">{t('courseBuilder.draftHidden')}</option>
                     </select>
                   </label>
                 </div>
@@ -1622,27 +1654,27 @@ export function InstructorDashboardPage() {
 
               {builderError && (
                 <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">
-                  {builderError}
+                  {localizeBuilderError(builderError)}
                 </div>
               )}
 
               <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-5 dark:border-gray-800">
                 <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-                  {draft.id && (
+                  {isEditingCourse && (
                     <button
                       type="button"
                       onClick={handleDeleteCourse}
                       className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300 dark:hover:bg-red-950/30"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      Delete Course
+                      {t('courseBuilder.deleteCourse')}
                     </button>
                   )}
                 </div>
                 <div className="flex gap-3">
                   {builderStep > 1 && (
                     <button type="button" onClick={() => setBuilderStep((step) => step - 1)} className="btn-secondary">
-                      Back
+                      {t('courseBuilder.back')}
                     </button>
                   )}
 
@@ -1663,11 +1695,15 @@ export function InstructorDashboardPage() {
                       }}
                       className="btn-primary"
                     >
-                      Continue
+                      {t('courseBuilder.continue')}
                     </button>
                   ) : (
                     <button type="button" onClick={saveCourse} className="btn-primary" disabled={isSavingCourse}>
-                      {isSavingCourse ? 'Saving…' : draft.status === 'Published' ? 'Publish course' : 'Save draft'}
+                      {isSavingCourse
+                        ? t('courseBuilder.saving')
+                        : draft.status === 'Published'
+                          ? t('courseBuilder.publishCourse')
+                          : t('courseBuilder.saveDraft')}
                     </button>
                   )}
                 </div>

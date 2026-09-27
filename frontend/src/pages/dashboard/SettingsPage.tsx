@@ -1,27 +1,38 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Bell, CheckCircle2, MoonStar, Save, ShieldCheck, Trash2, UserRound } from 'lucide-react';
+import { AlertCircle, Bell, Save, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import {
-  deleteLocalUserById,
   getMasterAdminEmail,
   isMasterAdminEmail,
-  readLocalSettings,
-  readLocalUsers,
-  writeLocalSettings,
-  writeLocalUsers,
   type LocalPlatformSettings,
-  type LocalUserRecord,
 } from '@/lib/localDb';
+import { fetchAdminSettings, saveAdminSettings } from '@/lib/adminSettingsRepository';
+import { createAdminAdministrator, deleteAdminUser, fetchAdminUsers, type AdminUser } from '@/lib/adminUserRepository';
+import { errorMessage } from '@/lib/apiError';
 import { isValidEmail, normalizeSettingsText, sanitizeEmail } from '@/lib/validation';
 import { AdminSettingsEnhancements } from '@/components/dashboard/AdminSettingsEnhancements';
 import { useTranslation } from '@/context/I18nContext';
+
+const defaultPlatformSettings: LocalPlatformSettings = {
+  adminName: 'Platform Admin',
+  adminEmail: 'ah.adel2188@gmail.com',
+  companyName: 'Fasl_ai',
+  siteName: 'Fasl_ai',
+  timezone: 'UTC',
+  allowStudentSignup: true,
+  requireEmailVerification: true,
+  autoPublishCourses: false,
+  defaultTheme: 'system',
+  supportEmail: 'support@learnflow.io',
+  performancePlatformReferences: true,
+};
 
 export function SettingsPage() {
   const { session, user, profile, updateAccount } = useAuth();
   const { t } = useTranslation();
   const currentUserEmail = (session?.email ?? user?.email ?? '').trim().toLowerCase();
   const isOwnerSession = currentUserEmail === getMasterAdminEmail().toLowerCase();
-  const [settings, setSettings] = useState<LocalPlatformSettings>(readLocalSettings());
+  const [settings, setSettings] = useState<LocalPlatformSettings>(defaultPlatformSettings);
   const isAdmin = profile?.role === 'admin';
   const [profileForm, setProfileForm] = useState({
     fullName: profile?.full_name ?? 'Platform Admin',
@@ -36,33 +47,49 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
-  const [admins, setAdmins] = useState<LocalUserRecord[]>(() =>
-    readLocalUsers().filter((entry) => entry.role === 'admin'),
-  );
+  const [admins, setAdmins] = useState<AdminUser[]>([]);
 
   useEffect(() => {
-    try {
+    let isMounted = true;
+    const loadSettings = async () => {
       setLoading(true);
       setError(null);
-
-      const nextSettings = readLocalSettings();
-      const localUsers = readLocalUsers();
-      const currentUser = session ? localUsers.find((entry) => entry.id === session.userId) : null;
-
-      setSettings(nextSettings);
-      setAdmins(localUsers.filter((entry) => entry.role === 'admin'));
-      setProfileForm({
-        fullName: currentUser?.profile.full_name ?? profile?.full_name ?? nextSettings.adminName,
-        email: currentUser?.email ?? user?.email ?? nextSettings.adminEmail,
-        bio: currentUser?.profile.bio ?? 'Platform administrator and system owner.',
-      });
-    } catch (loadError) {
-      console.error('Failed to load settings:', loadError);
-      setError('Unable to load your settings from the local platform database.');
-    } finally {
-      setLoading(false);
-    }
-  }, [session, user]);
+      try {
+        const [platform, adminUsers] = isAdmin
+          ? await Promise.all([fetchAdminSettings(), fetchAdminUsers()])
+          : [null, [] as AdminUser[]];
+        if (!isMounted) return;
+        const localSettings = defaultPlatformSettings;
+        setSettings(platform ? {
+          ...localSettings,
+          adminName: profile?.full_name ?? platform.adminName ?? localSettings.adminName,
+          adminEmail: user?.email ?? platform.adminEmail ?? localSettings.adminEmail,
+          companyName: platform.companyName ?? localSettings.companyName,
+          siteName: platform.siteName ?? platform.platform_name,
+          timezone: platform.timezone ?? localSettings.timezone,
+          allowStudentSignup: platform.allowStudentSignup ?? localSettings.allowStudentSignup,
+          requireEmailVerification: platform.requireEmailVerification ?? localSettings.requireEmailVerification,
+          autoPublishCourses: platform.autoPublishCourses ?? localSettings.autoPublishCourses,
+          defaultTheme: platform.default_theme ?? localSettings.defaultTheme,
+          supportEmail: platform.support_email ?? localSettings.supportEmail,
+          performancePlatformReferences: platform.performancePlatformReferences ?? localSettings.performancePlatformReferences,
+        } : localSettings);
+        setAdmins(adminUsers.filter((entry) => entry.role === 'admin'));
+        setProfileForm({
+          fullName: profile?.full_name ?? localSettings.adminName,
+          email: user?.email ?? localSettings.adminEmail,
+          bio: 'Platform administrator and system owner.',
+        });
+      } catch (loadError) {
+        console.error('Failed to load settings:', loadError);
+        if (isMounted) setError(errorMessage(loadError, t('settingsErrors.loadError')));
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+    void loadSettings();
+    return () => { isMounted = false; };
+  }, [isAdmin, profile, session, t, user]);
 
   const updateSetting = <K extends keyof LocalPlatformSettings>(key: K, value: LocalPlatformSettings[K]) => {
     setSettings((current) => ({ ...current, [key]: value }));
@@ -77,12 +104,12 @@ export function SettingsPage() {
       const nextEmail = sanitizeEmail(profileForm.email);
 
       if (!nextFullName || nextFullName.length < 2) {
-        setError('Full name must contain at least 2 characters.');
+        setError(t('settingsErrors.fullNameRequired'));
         return;
       }
 
       if (!isValidEmail(nextEmail)) {
-        setError('Please provide a valid email address for the profile.');
+        setError(t('settingsErrors.validProfileEmail'));
         return;
       }
 
@@ -93,14 +120,30 @@ export function SettingsPage() {
         bio: nextBio,
       }));
 
-      writeLocalSettings({
+      const sanitizedSettings = {
         ...settings,
         adminName: normalizeSettingsText(settings.adminName, 80),
         adminEmail: sanitizeEmail(settings.adminEmail),
         companyName: normalizeSettingsText(settings.companyName, 80),
         siteName: normalizeSettingsText(settings.siteName, 80),
         supportEmail: sanitizeEmail(settings.supportEmail),
-      });
+      };
+
+      if (isAdmin) {
+        const persisted = await saveAdminSettings({
+          platform_name: sanitizedSettings.siteName,
+          support_email: sanitizedSettings.supportEmail,
+          default_theme: sanitizedSettings.defaultTheme,
+          companyName: sanitizedSettings.companyName,
+          siteName: sanitizedSettings.siteName,
+          timezone: sanitizedSettings.timezone,
+          allowStudentSignup: sanitizedSettings.allowStudentSignup,
+          requireEmailVerification: sanitizedSettings.requireEmailVerification,
+          autoPublishCourses: sanitizedSettings.autoPublishCourses,
+          performancePlatformReferences: sanitizedSettings.performancePlatformReferences,
+        });
+        setSettings((current) => ({ ...current, ...sanitizedSettings, ...persisted }));
+      }
 
       if (session && user) {
         const accountUpdate = await updateAccount(nextFullName, nextEmail, nextBio);
@@ -108,37 +151,21 @@ export function SettingsPage() {
           setError(accountUpdate.error);
           return;
         }
-        const users = readLocalUsers();
-        const nextUsers = users.map((entry) =>
-          entry.id === session.userId
-            ? {
-                ...entry,
-                email: nextEmail,
-                profile: {
-                  ...entry.profile,
-                  full_name: nextFullName,
-                  bio: nextBio,
-                  updated_at: new Date().toISOString(),
-                },
-              }
-            : entry,
-        );
-        writeLocalUsers(nextUsers);
       }
 
-      setSaved('Settings saved successfully.');
+      setSaved(t('settingsErrors.settingsSaved'));
     } catch (saveError) {
       console.error('Failed to save settings:', saveError);
       setSaved(null);
-      setError('Failed to persist the configuration locally.');
+      setError(errorMessage(saveError, t('settingsErrors.persistError')));
     }
   };
 
-  const handleCreateAdmin = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCreateAdmin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!isOwnerSession) {
-      setError('Only the master admin can create secondary administrators.');
+      setError(t('settingsErrors.masterAdminCreateOnly'));
       return;
     }
 
@@ -147,71 +174,39 @@ export function SettingsPage() {
     const password = adminForm.password.trim();
 
     if (!trimmedName || trimmedName.length < 2) {
-      setError('Administrator name must contain at least 2 characters.');
+      setError(t('settingsErrors.adminNameRequired'));
       return;
     }
 
     if (!isValidEmail(trimmedEmail)) {
-      setError('Please provide a valid admin email address.');
+      setError(t('settingsErrors.validAdminEmail'));
       return;
     }
 
     if (!password || password.length < 6) {
-      setError('Admin password must be at least 6 characters long.');
+      setError(t('settingsErrors.adminPasswordLength'));
       return;
     }
 
-    const users = readLocalUsers();
-    const duplicate = users.some((user) => user.email.toLowerCase() === trimmedEmail.toLowerCase());
-    if (duplicate) {
-      setError('An account with that admin email already exists.');
-      return;
+    try {
+      await createAdminAdministrator({ full_name: trimmedName, email: trimmedEmail, password, status: 'active' });
+      setAdmins((await fetchAdminUsers()).filter((entry) => entry.role === 'admin'));
+      setAdminForm({ name: '', email: '', password: '' });
+      setSaved(t('settingsErrors.secondaryAdminCreated'));
+      setError(null);
+    } catch (createError) {
+      setError(errorMessage(createError, t('settingsErrors.persistError')));
     }
-
-    const nextUsers: LocalUserRecord[] = [
-      ...users,
-      {
-        id: crypto.randomUUID(),
-        name: trimmedName,
-        email: trimmedEmail,
-        password,
-        role: 'admin',
-        avatar: null,
-        status: 'active',
-        joinedAt: new Date().toISOString(),
-        profile: {
-          id: crypto.randomUUID(),
-          full_name: trimmedName,
-          role: 'admin',
-          avatar_url: null,
-          bio: 'Secondary platform administrator.',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        permissions: {
-          manageCourses: true,
-          moderateStudents: true,
-          viewAnalytics: true,
-        },
-        courseIds: [],
-      },
-    ];
-
-    writeLocalUsers(nextUsers);
-    setAdmins(nextUsers.filter((entry) => entry.role === 'admin'));
-    setAdminForm({ name: '', email: '', password: '' });
-    setSaved('Secondary admin account created successfully.');
-    setError(null);
   };
 
-  const handleDeleteAdmin = (adminId: string, adminEmail: string) => {
+  const handleDeleteAdmin = async (adminId: string, adminEmail: string) => {
     if (!isAdmin || !isOwnerSession) {
-      setError('Only the master admin can manage administrator access.');
+      setError(t('settingsErrors.masterAdminManageOnly'));
       return;
     }
 
     if (isMasterAdminEmail(adminEmail) && currentUserEmail !== getMasterAdminEmail().toLowerCase()) {
-      setError('The master admin account cannot be deleted by another user.');
+      setError(t('settingsErrors.masterAdminDeleteOnly'));
       return;
     }
 
@@ -223,30 +218,23 @@ export function SettingsPage() {
     if (!confirmed) return;
 
     try {
-      const nextUsers = deleteLocalUserById(adminId, currentUserEmail);
-      setAdmins(nextUsers.filter((entry) => entry.role === 'admin'));
+      await deleteAdminUser(adminId);
+      setAdmins((await fetchAdminUsers()).filter((entry) => entry.role === 'admin'));
       const targetWasMaster = isMasterAdminEmail(adminEmail);
-      setSaved(targetWasMaster ? 'Master admin account removed from the local store.' : 'Secondary admin removed.');
+      setSaved(targetWasMaster ? t('settingsErrors.masterAdminRemoved') : t('settingsErrors.secondaryAdminRemoved'));
       setError(null);
       if (currentUserEmail !== getMasterAdminEmail().toLowerCase()) {
         return;
       }
-      if (targetWasMaster) {
-        const localUsers = readLocalUsers();
-        const fallbackOwner = localUsers.find((entry) => isMasterAdminEmail(entry.email));
-        if (fallbackOwner) {
-          setSaved('Master admin account removed.');
-        }
-      }
       if (targetWasMaster && adminId === session?.userId) {
-        setSaved('Your master admin account has been deleted.');
+        setSaved(t('settingsErrors.masterAdminDeleted'));
       }
       if (!targetWasMaster) {
-        setSaved('Secondary admin removed.');
+        setSaved(t('settingsErrors.secondaryAdminRemoved'));
       }
     } catch (deleteError) {
       console.error('Failed to delete admin:', deleteError);
-      setError('The master admin account can only be deleted by the owner session.');
+      setError(errorMessage(deleteError, t('settingsErrors.ownerDeleteOnly')));
     }
   };
 
@@ -335,15 +323,15 @@ export function SettingsPage() {
                   <ShieldCheck className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">Preferences</p>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Platform preferences</h2>
+                  <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">{t('common.preferences')}</p>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('settings.platformPreferences')}</h2>
                 </div>
               </div>
 
               <div className="mt-5 space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <label className="label-text">Site name</label>
+                    <label className="label-text">{t('settings.siteName')}</label>
                     <input
                       value={settings.siteName}
                       onChange={(event) => updateSetting('siteName', event.target.value)}
@@ -351,7 +339,7 @@ export function SettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="label-text">Company name</label>
+                    <label className="label-text">{t('settings.companyName')}</label>
                     <input
                       value={settings.companyName}
                       onChange={(event) => updateSetting('companyName', event.target.value)}
@@ -362,7 +350,7 @@ export function SettingsPage() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <label className="label-text">Support email</label>
+                    <label className="label-text">{t('settings.supportEmail')}</label>
                     <input
                       type="email"
                       value={settings.supportEmail}
@@ -371,7 +359,7 @@ export function SettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="label-text">Timezone</label>
+                    <label className="label-text">{t('settings.timezone')}</label>
                     <input
                       value={settings.timezone}
                       onChange={(event) => updateSetting('timezone', event.target.value)}
@@ -381,22 +369,22 @@ export function SettingsPage() {
                 </div>
 
                 <div>
-                  <label className="label-text">Default theme</label>
+                  <label className="label-text">{t('settings.defaultTheme')}</label>
                   <select
                     value={settings.defaultTheme}
                     onChange={(event) => updateSetting('defaultTheme', event.target.value as LocalPlatformSettings['defaultTheme'])}
                     className="input-field"
                   >
-                    <option value="system">System</option>
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
+                    <option value="system">{t('settings.themeSystem')}</option>
+                    <option value="light">{t('settings.themeLight')}</option>
+                    <option value="dark">{t('settings.themeDark')}</option>
                   </select>
                 </div>
 
                 <label className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/60">
                   <div>
-                    <p className="font-medium text-gray-900 dark:text-white">Performance platform references</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Enable performance references for institutional reporting and dashboards.</p>
+                    <p className="font-medium text-gray-900 dark:text-white">{t('settings.performanceReferences')}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{t('settings.performanceReferencesDescription')}</p>
                   </div>
                   <input
                     type="checkbox"
@@ -409,7 +397,7 @@ export function SettingsPage() {
             </div>
           )}
 
-          <div className="card p-5">
+          {isAdmin && <div className="card p-5">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-950/30 dark:text-amber-300">
                 <Bell className="h-5 w-5" />
@@ -460,7 +448,7 @@ export function SettingsPage() {
                 />
               </label>
             </div>
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -471,25 +459,25 @@ export function SettingsPage() {
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">Access control</p>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Manage Administrator Access</h2>
+              <p className="text-xs uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">{t('settings.accessControl')}</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{t('settings.accessControlTitle')}</h2>
             </div>
           </div>
 
           <div className="mt-5 grid gap-6 xl:grid-cols-[0.9fr,1.1fr]">
             <form onSubmit={handleCreateAdmin} className="space-y-4 rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
               <div>
-                <label className="label-text">Admin name</label>
+                <label className="label-text">{t('settings.adminName')}</label>
                 <input
                   value={adminForm.name}
                   onChange={(event) => setAdminForm((current) => ({ ...current, name: event.target.value }))}
                   className="input-field"
-                  placeholder="New Platform Admin"
+                  placeholder={t('settings.newPlatformAdmin')}
                 />
               </div>
 
               <div>
-                <label className="label-text">Admin email</label>
+                <label className="label-text">{t('settings.adminEmail')}</label>
                 <input
                   type="email"
                   value={adminForm.email}
@@ -500,7 +488,7 @@ export function SettingsPage() {
               </div>
 
               <div>
-                <label className="label-text">Temporary password</label>
+                <label className="label-text">{t('settings.temporaryPassword')}</label>
                 <input
                   type="text"
                   value={adminForm.password}
@@ -512,13 +500,13 @@ export function SettingsPage() {
 
               <button type="submit" className="btn-primary w-full">
                 <ShieldCheck className="h-4 w-4" />
-                Add admin
+                {t('settings.addAdmin')}
               </button>
             </form>
 
             <div className="space-y-3">
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Master Admin / Owner</p>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('settings.masterAdminOwner')}</p>
                 <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-900/50 dark:bg-emerald-950/20">
                   <div>
                     <p className="font-semibold text-gray-900 dark:text-white">{admins.find((entry) => isMasterAdminEmail(entry.email))?.name ?? 'Platform Admin'}</p>
@@ -526,7 +514,7 @@ export function SettingsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
-                      Protected
+                      {t('settings.protected')}
                     </span>
                     {isOwnerSession && (
                       <button
@@ -542,10 +530,10 @@ export function SettingsPage() {
               </div>
 
               <div className="space-y-2">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Secondary administrators</p>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('settings.secondaryAdmins')}</p>
                 {admins.filter((entry) => !isMasterAdminEmail(entry.email)).length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                    No secondary admins yet.
+                    {t('settings.noSecondaryAdmins')}
                   </div>
                 ) : (
                   admins

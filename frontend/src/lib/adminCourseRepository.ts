@@ -8,8 +8,12 @@ export type AdminCourse = {
   instructor_id: string;
   title: string;
   description: string;
+  category?: string;
+  difficulty?: string;
+  ai_model?: string;
   thumbnail_url?: string | null;
   price?: number;
+  enrollment_count?: number;
   status: AdminCourseStatus;
   is_published: boolean;
   is_featured: boolean;

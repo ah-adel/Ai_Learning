@@ -2,6 +2,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from app.core.security import create_access_token
 from app.main import app
 
 
@@ -20,6 +21,7 @@ def test_course_visibility_and_evaluation_persistence() -> None:
     )
     assert instructor.status_code == 201, instructor.text
     instructor_user = instructor.json()["data"]["user"]
+    instructor_token = instructor.json()["data"]["session"]["access_token"]
 
     student_email = f"student_{uuid.uuid4().hex[:8]}@example.com"
     student = client.post(
@@ -33,6 +35,7 @@ def test_course_visibility_and_evaluation_persistence() -> None:
     )
     assert student.status_code == 201, student.text
     student_id = student.json()["data"]["user"]["id"]
+    student_token = student.json()["data"]["session"]["access_token"]
 
     course_payload = {
         "instructor_id": instructor_user["id"],
@@ -57,7 +60,7 @@ def test_course_visibility_and_evaluation_persistence() -> None:
     created = client.post(
         "/api/courses",
         json=course_payload,
-        headers={"Authorization": f"Bearer {instructor_user['id']}"},
+        headers={"Authorization": f"Bearer {instructor_token}"},
     )
     assert created.status_code == 201, created.text
     created_course = created.json()["data"]
@@ -71,7 +74,7 @@ def test_course_visibility_and_evaluation_persistence() -> None:
 
     student_courses = client.get(
         "/api/courses",
-        headers={"Authorization": f"Bearer {student_id}"},
+        headers={"Authorization": f"Bearer {student_token}"},
     )
     assert student_courses.status_code == 200, student_courses.text
     student_ids = {item["id"] for item in student_courses.json()["data"]}
@@ -79,7 +82,7 @@ def test_course_visibility_and_evaluation_persistence() -> None:
 
     admin_courses = client.get(
         "/api/courses",
-        headers={"Authorization": "Bearer admin-1"},
+        headers={"Authorization": f"Bearer {create_access_token('admin-1', 'admin')}"},
     )
     assert admin_courses.status_code == 200, admin_courses.text
     admin_ids = {item["id"] for item in admin_courses.json()["data"]}
@@ -87,7 +90,7 @@ def test_course_visibility_and_evaluation_persistence() -> None:
 
     created_course = client.get(
         f"/api/courses/{created_course['id']}",
-        headers={"Authorization": f"Bearer {instructor_user['id']}"},
+        headers={"Authorization": f"Bearer {instructor_token}"},
     ).json()["data"]
     assert created_course.get("difficulty") in {"Beginner", "Intermediate", "Advanced"}, created_course
     persisted_lesson = created_course["modules"][0]["lessons"][0]
@@ -95,7 +98,7 @@ def test_course_visibility_and_evaluation_persistence() -> None:
 
     enroll_response = client.post(
         f"/api/courses/{created_course['id']}/enroll",
-        headers={"Authorization": f"Bearer {student_id}"},
+        headers={"Authorization": f"Bearer {student_token}"},
     )
     assert enroll_response.status_code == 200, enroll_response.text
 
@@ -105,14 +108,14 @@ def test_course_visibility_and_evaluation_persistence() -> None:
             "rating": 5,
             "comment": "Excellent course and very clear content.",
         },
-        headers={"Authorization": f"Bearer {student_id}"},
+        headers={"Authorization": f"Bearer {student_token}"},
     )
     assert review_response.status_code == 200, review_response.text
     assert review_response.json()["data"]["rating"] == 5, review_response.json()
 
     updated_course = client.get(
         f"/api/courses/{created_course['id']}",
-        headers={"Authorization": f"Bearer {instructor_user['id']}"},
+        headers={"Authorization": f"Bearer {instructor_token}"},
     ).json()["data"]
     assert updated_course["review_count"] >= 1, updated_course
     assert updated_course["enrollment_count"] >= 1, updated_course

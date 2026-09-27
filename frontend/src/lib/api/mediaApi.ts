@@ -54,10 +54,7 @@ export async function uploadMediaFile(
 
     const bearerToken = (() => {
       try {
-        return window.localStorage.getItem('access_token')
-          ?? window.sessionStorage.getItem('access_token')
-          ?? window.sessionStorage.getItem('learnflow_session_token')
-          ?? '';
+        return window.sessionStorage.getItem('learnflow_session_token') ?? '';
       } catch {
         return '';
       }

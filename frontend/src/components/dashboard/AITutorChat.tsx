@@ -1,17 +1,31 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
+import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
+import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript';
+import json from 'react-syntax-highlighter/dist/esm/languages/prism/json';
+import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
+import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
+import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
 import {
   Bot,
   ChevronDown,
   MessageSquareText,
   SendHorizonal,
-  Sparkles,
   Wand2,
 } from 'lucide-react';
 import { useTranslation, type TranslationKey } from '@/context/I18nContext';
+
+SyntaxHighlighter.registerLanguage('bash', bash);
+SyntaxHighlighter.registerLanguage('css', css);
+SyntaxHighlighter.registerLanguage('javascript', javascript);
+SyntaxHighlighter.registerLanguage('json', json);
+SyntaxHighlighter.registerLanguage('python', python);
+SyntaxHighlighter.registerLanguage('tsx', tsx);
+SyntaxHighlighter.registerLanguage('typescript', typescript);
 
 type ModelProfile = {
   id: string;

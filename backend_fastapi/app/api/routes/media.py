@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile, status
 
+from app.core.security import get_current_user
+from app.db import cleanup_unreferenced_media
 from app.schemas.common import ApiErrorResponse, ApiSuccessResponse, DeleteCleanupResult, MediaUploadResult
-from app.services.media_service import process_deletion, process_media_upload
+from app.services.media_service import process_media_upload
 
 router = APIRouter()
 logger = logging.getLogger("app.api.routes.media")
@@ -60,12 +62,19 @@ async def upload_media(
 )
 async def delete_media_entity(
     entity: dict[str, Any] | None = None,
+    authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> ApiSuccessResponse[DeleteCleanupResult]:
     if entity is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"error": "Missing entity payload for deletion cleanup.", "details": {"body": None}})
 
+    user = get_current_user(authorization)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"error": "Authentication required."})
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "Admin access required."})
+
     try:
-        result = await process_deletion(entity, database_store={})
+        result = cleanup_unreferenced_media(entity)
         return ApiSuccessResponse[DeleteCleanupResult](
             data=DeleteCleanupResult.model_validate(result),
             message="Related media and references were cleaned successfully.",
@@ -97,5 +106,6 @@ async def upload_media_alias(
 )
 async def delete_media_entity_alias(
     entity: dict[str, Any] | None = None,
+    authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> ApiSuccessResponse[DeleteCleanupResult]:
-    return await delete_media_entity(entity=entity)
+    return await delete_media_entity(entity=entity, authorization=authorization)

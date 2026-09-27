@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
@@ -169,6 +170,22 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         detail,
     )
     return JSONResponse(status_code=exc.status_code, content=payload, headers=exc.headers)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    details = []
+    for item in exc.errors():
+        location = ".".join(str(part) for part in item.get("loc", ()) if part not in {"body", "query", "path"})
+        details.append({"field": location or "request", "message": str(item.get("msg", "Invalid value."))})
+    message = "; ".join(
+        f"{item['field']}: {item['message']}" for item in details
+    ) or "Request validation failed."
+    logger.warning("Request validation failed for %s %s: %s", request.method, request.url.path, message)
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"success": False, "error": message, "details": details},
+    )
 
 
 @app.get("/", tags=["meta"])

@@ -70,8 +70,8 @@ async def process_media_upload(file: UploadFile, type_value: str | None = None, 
     if mime_type not in allowed:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail={"error": f"Invalid file type for {raw_kind}.", "details": {"receivedType": mime_type}})
 
-    workspace_root = Path(project_root) if project_root is not None else PROJECT_ROOT
-    target_dir = workspace_root / "uploads" / get_upload_folder(raw_kind)
+    upload_root = Path(project_root) / "uploads" if project_root is not None else UPLOAD_ROOT
+    target_dir = upload_root / get_upload_folder(raw_kind)
     await ensure_upload_directory(target_dir)
 
     original_name = file.filename or "upload.bin"
@@ -99,5 +99,5 @@ async def process_deletion(entity: dict[str, Any] | None, project_root: str | Pa
     if entity is None or not isinstance(entity, dict):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"error": "Missing entity payload for deletion cleanup.", "details": {"body": entity}})
 
-    workspace_root = Path(project_root) if project_root is not None else PROJECT_ROOT
-    return cleanup_deletion_artifacts(entity, project_root=workspace_root, database_store=database_store)
+    upload_root = Path(project_root) / "uploads" if project_root is not None else UPLOAD_ROOT
+    return cleanup_deletion_artifacts(entity, project_root=upload_root, database_store=database_store)

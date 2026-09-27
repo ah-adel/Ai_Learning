@@ -1,5 +1,6 @@
 export function sanitizeText(value: string, maxLength = 200): string {
   return value
+    // eslint-disable-next-line no-control-regex -- This sanitizer intentionally strips control characters.
     .replace(/[\u0000-\u001F\u007F]/g, '')
     .replace(/[<>]/g, '')
     .replace(/\s+/g, ' ')

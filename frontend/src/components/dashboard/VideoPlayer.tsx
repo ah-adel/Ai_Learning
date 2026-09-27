@@ -13,7 +13,6 @@ import {
   Pause,
   Play,
   RotateCcw,
-  RotateCw,
   Trash2,
   Volume2,
   VolumeX,
@@ -434,6 +433,7 @@ export function VideoPlayer({ src, title, className = '' }: VideoPlayerProps) {
       try {
         window.localStorage.setItem(bookmarkStorageKey, JSON.stringify(nextBookmarks));
       } catch {
+        // Bookmarks remain in memory when browser storage is unavailable.
       }
 
       return nextBookmarks;
@@ -448,6 +448,7 @@ export function VideoPlayer({ src, title, className = '' }: VideoPlayerProps) {
       try {
         window.localStorage.setItem(bookmarkStorageKey, JSON.stringify(nextBookmarks));
       } catch {
+        // The in-memory bookmark list is still updated.
       }
 
       return nextBookmarks;

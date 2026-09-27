@@ -13,6 +13,12 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_pending_secret TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_failed_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_locked_until TIMESTAMPTZ;
+
 CREATE TABLE IF NOT EXISTS profiles (
   id TEXT PRIMARY KEY,
   full_name TEXT NOT NULL,
@@ -66,6 +72,34 @@ CREATE TABLE IF NOT EXISTS instructor_profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
+
+ALTER TABLE instructor_profiles ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE instructor_profiles ADD COLUMN IF NOT EXISTS is_verified BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE instructor_profiles ADD COLUMN IF NOT EXISTS verification_document_url TEXT;
+ALTER TABLE instructor_profiles ADD COLUMN IF NOT EXISTS payout_status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE instructor_profiles ADD COLUMN IF NOT EXISTS payout_processed_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS platform_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  notification_type TEXT NOT NULL DEFAULT 'general',
+  created_by TEXT,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+  ON notifications(user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS instructor_course_assignments (
   id TEXT PRIMARY KEY,

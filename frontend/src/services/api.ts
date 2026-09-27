@@ -31,12 +31,7 @@ export type DeleteCleanupResult = {
 
 const readBearerToken = () => {
   try {
-    const localToken = window.localStorage.getItem('access_token') ?? window.localStorage.getItem('token');
-    if (localToken) return localToken;
-    const sessionToken = window.sessionStorage.getItem('access_token')
-      ?? window.sessionStorage.getItem('token')
-      ?? window.sessionStorage.getItem('learnflow_session_token');
-    return sessionToken ?? '';
+    return window.sessionStorage.getItem('learnflow_session_token') ?? '';
   } catch {
     return '';
   }

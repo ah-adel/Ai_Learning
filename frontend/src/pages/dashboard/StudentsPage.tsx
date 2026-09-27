@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
-  BookOpen,
   GraduationCap,
   Search,
-  UserCheck,
   Users,
 } from 'lucide-react';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -15,8 +13,6 @@ import {
   readLocalUsers,
   writeLocalEnrollments,
   writeLocalUsers,
-  type LocalCourseRecord,
-  type LocalEnrollmentRecord,
 } from '@/lib/localDb';
 import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from '@/context/I18nContext';

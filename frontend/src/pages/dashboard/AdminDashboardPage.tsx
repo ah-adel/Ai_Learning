@@ -19,6 +19,7 @@ import {
 } from '@/lib/localDb';
 import type { UserRole } from '@/types/database.types';
 import { useTranslation } from '@/context/I18nContext';
+import { extractApiErrorMessage, errorMessage } from '@/lib/apiError';
 
 type DashboardUser = {
   id: string;
@@ -52,7 +53,7 @@ async function fetchAdminResource<T>(path: string): Promise<T> {
   const token = window.sessionStorage.getItem('learnflow_session_token');
   const response = await fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.error ?? `Request failed: ${response.status}`);
+  if (!response.ok) throw new Error(extractApiErrorMessage(payload, response.status));
   return payload.data as T;
 }
 
@@ -65,6 +66,7 @@ export function AdminDashboardPage() {
   const [stats, setStats] = useState<AdminStats>(EMPTY_STATS);
   const [courses, setCourses] = useState<Array<{ id: string; title: string; description: string; instructor_id: string; status?: string; is_published: boolean }>>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageIsError, setMessageIsError] = useState(false);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [monthly, setMonthly] = useState<MonthlyPoint[]>([]);
   const [system, setSystem] = useState<SystemStatus | null>(null);
@@ -118,6 +120,8 @@ export function AdminDashboardPage() {
           setActivity([]);
           setMonthly([]);
           setSystem(null);
+          setMessage(errorMessage(error, 'Unable to load admin data.'));
+          setMessageIsError(true);
         }
       } finally {
         if (isMounted) setIsLoading(false);
@@ -129,14 +133,6 @@ export function AdminDashboardPage() {
       isMounted = false;
     };
   }, [fetchAdminCourses, fetchAdminStats, fetchUsers, profile]);
-
-  if (!profile) {
-    return null;
-  }
-
-  if (profile.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
-  }
 
   const summary = useMemo(() => {
     const totalUsers = stats.total_users || users.length;
@@ -168,6 +164,14 @@ export function AdminDashboardPage() {
     };
   }, [courses, models, stats, users]);
 
+  if (!profile) {
+    return null;
+  }
+
+  if (profile.role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   const translateActivityDetail = (detail: string) => {
     if (detail === 'student') return t('common.studentRole');
     if (detail === 'instructor') return t('common.instructorRole');
@@ -181,17 +185,20 @@ export function AdminDashboardPage() {
     try {
       const token = window.sessionStorage.getItem('learnflow_session_token');
       const response = await fetch('/api/admin/system/maintenance', { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ enabled }) });
-      if (!response.ok) throw new Error('Unable to update maintenance mode.');
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(extractApiErrorMessage(payload, response.status));
       setMaintenance(enabled);
       setMessage(`Maintenance mode ${enabled ? 'enabled' : 'disabled'}.`);
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to update maintenance mode.'); }
+      setMessageIsError(false);
+    } catch (error) { setMessage(errorMessage(error, 'Unable to update maintenance mode.')); setMessageIsError(true); }
   };
 
   const purgeCache = async () => {
     try {
       await fetchAdminResource<{ purged: boolean }>('/api/admin/system/cache/purge');
       setMessage('Application cache purge requested.');
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to purge cache.'); }
+      setMessageIsError(false);
+    } catch (error) { setMessage(errorMessage(error, 'Unable to purge cache.')); setMessageIsError(true); }
   };
 
   const updateModelSetting = <K extends keyof LocalAiModelRecord>(
@@ -224,13 +231,15 @@ export function AdminDashboardPage() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || payload?.detail || 'Unable to update user role.');
+        throw new Error(extractApiErrorMessage(payload, response.status));
       }
       setMessage(`Updated user role to ${role}.`);
       const nextUsers = await fetchUsers();
       setUsers(nextUsers);
+      setMessageIsError(false);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to update user role.');
+      setMessage(errorMessage(error, 'Unable to update user role.'));
+      setMessageIsError(true);
     }
   };
 
@@ -243,13 +252,15 @@ export function AdminDashboardPage() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || payload?.detail || 'Unable to update user status.');
+        throw new Error(extractApiErrorMessage(payload, response.status));
       }
       setMessage(`Updated user status to ${status}.`);
       const nextUsers = await fetchUsers();
       setUsers(nextUsers);
+      setMessageIsError(false);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to update user status.');
+      setMessage(errorMessage(error, 'Unable to update user status.'));
+      setMessageIsError(true);
     }
   };
 
@@ -262,15 +273,17 @@ export function AdminDashboardPage() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || payload?.detail || 'Unable to update course status.');
+        throw new Error(extractApiErrorMessage(payload, response.status));
       }
       setMessage(`Updated course status to ${status}.`);
       const nextStats = await fetchAdminStats();
       const nextCourses = await fetchAdminCourses();
       setStats(nextStats);
       setCourses(nextCourses.map((course) => ({ ...course, status: course.is_published ? 'published' : 'draft' })));
+      setMessageIsError(false);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to update course status.');
+      setMessage(errorMessage(error, 'Unable to update course status.'));
+      setMessageIsError(true);
     }
   };
 
@@ -282,13 +295,15 @@ export function AdminDashboardPage() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || payload?.detail || 'Unable to delete user.');
+        throw new Error(extractApiErrorMessage(payload, response.status));
       }
       setMessage('User deleted successfully.');
       const nextUsers = await fetchUsers();
       setUsers(nextUsers);
+      setMessageIsError(false);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to delete user.');
+      setMessage(errorMessage(error, 'Unable to delete user.'));
+      setMessageIsError(true);
     }
   };
 
@@ -495,7 +510,7 @@ export function AdminDashboardPage() {
       </div>
 
       {message && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+        <div className={`rounded-xl border px-4 py-3 text-sm ${messageIsError ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200' : 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200'}`} role={messageIsError ? 'alert' : 'status'}>
           {message}
         </div>
       )}
@@ -629,9 +644,9 @@ export function AdminDashboardPage() {
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-400 dark:text-gray-500">
-              Model configuration
+              {t('dashboard.modelConfiguration')}
             </p>
-            <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">AI Models</h2>
+            <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{t('dashboard.aiModels')}</h2>
           </div>
           <Bot className="h-5 w-5 text-primary-500" />
         </div>
@@ -654,7 +669,7 @@ export function AdminDashboardPage() {
                   }`}
                 >
                   <Power className="h-3.5 w-3.5" />
-                  {model.isActive ? 'Active' : 'Inactive'}
+                  {model.isActive ? t('ai.enabled') : t('ai.disabled')}
                 </button>
               </div>
 
@@ -662,14 +677,14 @@ export function AdminDashboardPage() {
                 <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-950">
                   <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                     <KeyRound className="h-4 w-4" />
-                    API key status
+                    {t('dashboard.apiKeyStatus')}
                   </div>
                   <span
                     className={`text-xs font-semibold ${
                       model.apiKey ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'
                     }`}
                   >
-                    {model.apiKey ? 'Configured' : 'Missing'}
+                    {model.apiKey ? t('dashboard.apiConfigured') : t('dashboard.apiMissing')}
                   </span>
                 </div>
 
@@ -677,7 +692,7 @@ export function AdminDashboardPage() {
                   <div className="mb-2 flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
                     <span className="flex items-center gap-2">
                       <SlidersHorizontal className="h-4 w-4" />
-                      Temperature
+                      {t('ai.temperature')}
                     </span>
                     <span className="font-medium text-gray-900 dark:text-white">{model.temperature.toFixed(1)}</span>
                   </div>
@@ -693,7 +708,7 @@ export function AdminDashboardPage() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm text-gray-600 dark:text-gray-300">Max tokens</label>
+                  <label className="mb-2 block text-sm text-gray-600 dark:text-gray-300">{t('ai.maxTokens')}</label>
                   <input
                     type="number"
                     min={100}
